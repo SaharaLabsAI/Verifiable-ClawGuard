@@ -1,4 +1,4 @@
-# Verifiable Agent Guardrails with Trusted Execution Environments
+# ClawGuard: Verifiable Guardrails for Openclaw Agents
 
 > *"Committed to beneficial AI that protects humanity"* - Cryptographically verify whether the agent you talk to adheres to this principle.
 
