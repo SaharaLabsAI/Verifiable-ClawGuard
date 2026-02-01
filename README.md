@@ -1,6 +1,6 @@
 # Verifiable Agent Guardrails with Trusted Execution Environments
 
-> *"Committed to beneficial AI that protects humanity"* - Cryptographically verify whether the agent you talks to adheres to this principle.
+> *"Committed to beneficial AI that protects humanity"* - Cryptographically verify whether the agent you talk to adheres to this principle.
 
 
 We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a simple guardrail and OpenClaw agent in a cloud TEE. We then directly request attestation or perform end-to-end encrypted communication with the agent through the chat interface.
