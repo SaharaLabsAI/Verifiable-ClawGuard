@@ -1,0 +1,39 @@
+{
+  "version": "1.0.0",
+  "rules": {
+    "pii_detection": {
+      "enabled": true,
+      "block_ssn": true,
+      "block_credit_card": true,
+      "block_email": false,
+      "block_phone": false
+    },
+    "content_filtering": {
+      "enabled": true,
+      "blocked_patterns": [
+        "(?i)(password|secret|api[_-]?key)\\s*[:=]\\s*['\"]?[a-zA-Z0-9]{8,}"
+      ]
+    },
+    "rate_limiting": {
+      "enabled": true,
+      "requests_per_minute": 60,
+      "requests_per_hour": 1000
+    },
+    "token_limits": {
+      "enabled": true,
+      "max_tokens_per_request": 16000,
+      "max_tokens_per_day": 1000000
+    },
+    "prompt_injection": {
+      "enabled": true,
+      "detect_system_prompt_leakage": true,
+      "detect_jailbreak_attempts": true
+    },
+    "data_usage": {
+      "enabled": true,
+      "allowed_domains": [],
+      "blocked_domains": ["internal.company.com"],
+      "require_user_consent": true
+    }
+  }
+}

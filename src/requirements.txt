@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+httpx
+pydantic
+python-dotenv
+cryptography
+
+# AWS Nitro Enclaves NSM Interface for attestation
+aws-nsm-interface
+cbor2
+
+# NeMo Guardrails for content safety
+nemoguardrails[openai]

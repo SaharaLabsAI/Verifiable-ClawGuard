@@ -1,0 +1,75 @@
+FROM node:24-slim
+
+# ============================================================================
+# MEASURED LAYER - This determines PCR2 (never changes!)
+# ============================================================================
+
+# Install Python and system dependencies + X11 libraries for clipboard module
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    jq \
+    curl \
+    iptables \
+    iproute2 \
+    xvfb \
+    libx11-6 \
+    libxcb1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrender1 \
+    libxtst6 \
+    libxss1 \
+    libasound2 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /guardrail
+
+# Install Python guardrail dependencies
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+
+# Copy guardrail application files
+COPY proxy_server.py ./
+COPY audit_logger.py ./
+COPY guardrail_policy.py ./
+COPY policy_config.json ./
+COPY attestation_server.py ./
+
+# Copy guardrails config if it exists
+COPY guardrails_config ./guardrails_config
+
+# Copy attestation skill
+COPY attestation-skill /attestation-skill
+
+# Create necessary directories
+RUN mkdir -p /guardrail/audit_logs /tmp/agent
+
+# Copy vsock receiver script
+COPY vsock_receiver.py ./
+
+# Copy local HTTP proxy (for outbound internet access via parent)
+COPY local_http_proxy.py ./
+
+# Copy vsock-to-TCP bridge (for gateway access from parent)
+COPY vsock_to_tcp_bridge.py ./
+
+# Copy and set permissions for boot script
+COPY boot_vsock.sh /boot_vsock.sh
+RUN chmod +x /boot_vsock.sh
+
+# ============================================================================
+# END MEASURED LAYER
+# ============================================================================
+# Everything above is measured in PCR2
+# MoltBot will be injected at runtime (not measured)
+# ============================================================================
+
+# Expose ports
+EXPOSE 8080
+
+# Run boot script
+CMD ["/boot_vsock.sh"]

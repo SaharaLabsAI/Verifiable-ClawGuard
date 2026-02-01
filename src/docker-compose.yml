@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  guardrail-proxy:
+    build: .
+    container_name: llm-guardrail-proxy
+    ports:
+      - "8080:8080"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-https://api.anthropic.com/v1}
+    volumes:
+      - ./audit_logs:/app/audit_logs
+      - ./policy_config.json:/app/policy_config.json
+    restart: unless-stopped
+    networks:
+      - guardrail-net
+
+networks:
+  guardrail-net:
+    driver: bridge
