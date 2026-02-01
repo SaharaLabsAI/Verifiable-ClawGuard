@@ -3,7 +3,8 @@
 > *"Committed to beneficial AI that protects humanity"* - Cryptographically verify whether the agent you talk to adheres to this principle.
 
 
-We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a simple guardrail and OpenClaw agent in a cloud TEE. We then directly request attestation or perform end-to-end encrypted communication with the agent through the chat interface.
+We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a simple guardrail and OpenClaw agent in a cloud TEE. For demonstrative purposes only, users can directly request attestation through the chat interface.
+
 
 ![attestation_request_via_chat](assets/demo_attestation_request.png)
 ![attestation_response_via_chat](assets/demo_attestation_response.png)
@@ -22,7 +23,7 @@ This connects to our earlier work on [open-source agentic protocols and x402-ext
 **Disclaimer: this version of the demo is for demonstrative purposes only.**
 
 
-We achieve verifiable guardrails by running it inside an AWS Nitro Enclave and using remote attestation to prove exactly what guardrail code is protecting the agent (a stable PCR2 measurement). All LLM traffic is forced through a FastAPI-based interception proxy (integrated with the guardrail); Verifiers can then check the attestation (PCRs plus embedded agent metadata/hashes) before trusting the agent or serving it data. 
+We achieve verifiable guardrails by running it inside an AWS Nitro Enclave and using remote attestation to prove exactly what guardrail code is protecting the agent (a stable PCR2 measurement). All LLM traffic is forced through a FastAPI-based interception proxy (integrated with the guardrail); Verifiers can then check the attestation (PCRs plus embedded agent metadata/hashes) before trusting the agent or serving it data.
 
 Please note the attestation cannot ensure the agent to be 100% “safe” (the guardrail code could still have vulnerabilities, and the LLM guardrail can make mistakes), but it ensures the promised guardrail code is actually running.
 
@@ -41,10 +42,10 @@ This will build the enclave and display its PCR measurement, for example:
 ```
 "PCR0": "178176da050f38c5b280c933e00857153a727136e7fd56982aee188a468e4512d3b346ef6163133a2462b41e5578eaef",
 "PCR1": "4b4d5b3661b3efc12920900c80e126e4ce783c522de6c02a2a5bf7af3a2b9327b86776f188e4be1c1c404a129dbda493", 
-"PCR2": "ede3235e8559583cb66aded4d59df7b06c36c5ff1adf1f87bd88d92fbf2898a6cedecf0c02746cb6bf0d0e19da5a5f57"
+"PCR2": "6cb06673b5b9b74edd2dc459914353898c1612ffdee2e65c0e586ee1e4aeb011e2bdfbf98cc791da0de93a687d18ede7"
 ```
 
-Save the PCR2 measurement unique to the enclave image. When any code changes, the enclave image will also change.
+Save the PCR2 measurement unique to the enclave image. When any code changes, the measurement will also change.
 The integrity of the guardrail can be verified later by matching this measurement against the attested measurement by TEE.
 
 3. Run the enclave with the built image
@@ -76,16 +77,24 @@ nitro-cli console --enclave-id $ENCLAVE_CID
 ./ec2_setup.sh --agent-version 2026.1.24-3 --enclave-cid $ENCLAVE_CID --api-key ${OPENAI_API_KEY} 
 ```
 
-During launch, OpenClaw will be configured so that all LLM calls passes through a guardrail proxy server running locally inside the enclave. It will also launch an attestation & encryption server, and register `attestation` as a skill of the OpenClaw agent.
+During launch, OpenClaw will be configured so that all LLM calls passes through a guardrail proxy server running locally inside the enclave. It will also launch an attestation server, and register `attestation` as a skill of the OpenClaw agent.
 
 In the future, the guardrail will maintain a allowlist of acceptable builds of the agent. In addition, during the enclave boot, we will disable arbitary command execution of Openclaw inside the enclave.
 
 5. The OpenClaw gateway should be accessible from EC2 on ws://127.0.0.1:18789. Run SSH port forwarding from your local computer, open the web client in a broswer, and request attestation in the chat.
 
-For stronger security, you can ask the agent to include their response in their attestation quote. 
+6. Verify the attestation against the known PCR2 obtained earlier.
+```
+python verify_attestation.py --file ../examples/attestation_quote_example.json --pcr2 6cb06673b5b9b74edd2dc459914353898c1612ffdee2e65c0e586ee1e4aeb011e2bdfbf98cc791da0de93a687d18ede8
+```
 
-You can also initiate encrypted chat with the agent by sending your RSA public key in the chat. The agent will return an encrypted and TEE-attested session key that builds an end-to-end encrypted channel between you and the agent running inside the enclave. The agent can respond with an encrypted message thereafter in the chat messages.
+A valid attestation proves:
+- The message was processed inside a genuine AWS Nitro Enclave (cryptographic signature verified)
+- The exact guardrail code you trust is running (PCR2 matches your known measurement)
 
+To further ensure response authenticity, you can ask the agent to include their response in the attestation quote in the chat. 
+
+**Caution.** To ensure the entire communication is untampered, end-to-end encryption between user and the agent running in the enclave is needed [(example)](https://github.com/SaharaLabsAI/x-function/tree/main/verifiable). This is not implemented yet in this demo.
 
 ## System architecture
 
@@ -116,12 +125,9 @@ You can also initiate encrypted chat with the agent by sending your RSA public k
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │  VSOCK PROXY LAYER (Connection Management)                               │    │
-│  │  ┌────────────────────────────────────────────────────────────────────┐  │    │
-│  │  │  Vsock Proxy: 0.0.0.0:18789 → vsock://16:18789                     │  │    │
-│  │  │  - Exposes Openclaw gateway to internet                            │  │    │
-│  │  │  - WebSocket forwarding                                            │  │    │
-│  │  └────────────────────────────────────────────────────────────────────┘  │    │
+│  │  Vsock Proxy: 0.0.0.0:18789 → vsock://16:18789                           │    │
+│  │  - Exposes Openclaw gateway to internet                                  │    │ 
+│  │  - WebSocket forwarding                                                  │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
@@ -146,13 +152,6 @@ You can also initiate encrypted chat with the agent by sending your RSA public k
 │                    NITRO ENCLAVE  -   Trusted Execution                          │
 │                          MEASURED & ATTESTED (PCR2)                              │
 ├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │  NETWORK ISOLATION                                                       │    │
-│  │  - Block all external traffic                                            │    │
-│  │  - Allow only localhost communication                                    │    │
-│  │  - Force all LLM call through guardrail proxy                            │    │
-│  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
 │  │  LOCAL HTTP PROXY (localhost:8888)                                       │    │
@@ -182,6 +181,15 @@ You can also initiate encrypted chat with the agent by sending your RSA public k
 │  │  - AI agent framework with tool/skill support                            │    │
 │  │  - Configured with OPENAI_BASE_URL=http://localhost:8080                 │    │
 │  │  - Version swappable without PCR2 change                                 │    │
+│  │  - Future versions will block arbitrary command execs                    │    │
+│  └──────────────────────────────────────────────────────────────────────────┘    │
+│                                                                                  │
+│  ┌──────────────────────────────────────────────────────────────────────────┐    │
+│  │  ATTESTATION SERVER (localhost:8765) [MEASURED IN PCR2]                  │    │
+│  │  - Generates Nitro attestation documents on demand                       │    │
+│  │  - Includes PCR0/1/2 measurements + user_data (agent metadata/hash)      │    │
+│  │  - Registered as 'attestation' skill in OpenClaw                         │    │
+│  │  - Verifiable proof of guardrail integrity                               │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────┘
