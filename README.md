@@ -31,7 +31,7 @@ Please note the attestation cannot ensure the agent to be 100% “safe” (the g
 
 1. Launch an AWS EC2 `m5.xlarge` instance with Nitro Enclave modules enabled.
 
-2. Build the enclave image of the guardrail that protects the agent, which will be injected to the enclave later. 
+2. Build the enclave image of the guardrail that protects the agent, which will run in the enclave later. 
 
 ```
 cd src
