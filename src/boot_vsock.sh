@@ -311,6 +311,16 @@ else
     API_KEY="sk-proj-dummy"
 fi
 
+# Read gateway token from vsock-injected file
+if [ -f /tmp/gateway_token ]; then
+    GATEWAY_TOKEN=$(cat /tmp/gateway_token)
+    echo "  ✓ Gateway token loaded from vsock injection"
+else
+    echo "  ⚠ No gateway token provided - generating random token"
+    GATEWAY_TOKEN=$(openssl rand -hex 32)
+    echo "  Generated token: $GATEWAY_TOKEN"
+fi
+
 # Create config that routes all LLM calls through the guardrail proxy
 # Note: Using correct config path: ~/.clawdbot/clawdbot.json
 cat > ~/.clawdbot/clawdbot.json <<EOF
@@ -347,20 +357,20 @@ cat > ~/.clawdbot/clawdbot.json <<EOF
     "bind": "lan",
     "auth": {
       "mode": "token",
-      "token": "0c9aace26cf07b14a6b1a4cece9054d1bcf83aeb3618fa6b7ceb467d0fcb0adb"
+      "token": "$GATEWAY_TOKEN"
     }
   }
 }
 EOF
 
-# Securely delete API key file
-rm -f /tmp/api_key
+# Securely delete API key and gateway token files
+rm -f /tmp/api_key /tmp/gateway_token
 
 echo "  ✓ MoltBot configured:"
 echo "    - Config: ~/.clawdbot/clawdbot.json"
 echo "    - Proxy: http://localhost:8080/v1"
 echo "    - All LLM calls will be routed through guardrail"
-echo "    - API key securely loaded and original file deleted"
+echo "    - API key and gateway token securely loaded and original files deleted"
 echo ""
 
 # ============================================================================

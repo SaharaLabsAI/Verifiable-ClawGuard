@@ -5,12 +5,12 @@
 # It downloads MoltBot from npm and injects it into the enclave via vsock.
 #
 # Usage:
-#   ./inject_moltbot.sh [version] [enclave-cid] [api-key]
+#   ./inject_moltbot.sh [version] [enclave-cid] [api-key] [gateway-token]
 #
 # Example:
-#   ./inject_moltbot.sh 1.2.3 16 sk-proj-YOUR-API-KEY
+#   ./inject_moltbot.sh 1.2.3 16 sk-proj-YOUR-API-KEY your-gateway-token
 #
-# Note: API key is injected at runtime, so it doesn't affect PCR2 measurement
+# Note: API key and gateway token are injected at runtime, so they don't affect PCR2 measurement
 
 set -e
 
@@ -21,6 +21,7 @@ set -e
 MOLTBOT_VERSION="${1:-latest}"
 ENCLAVE_CID="${2:-16}"
 API_KEY="${3:-}"
+GATEWAY_TOKEN="${4:-}"
 VSOCK_PORT=9000
 
 WORK_DIR="/tmp/moltbot_injection_$$"
@@ -36,6 +37,7 @@ echo "  MoltBot Version: $MOLTBOT_VERSION"
 echo "  Enclave CID:     $ENCLAVE_CID"
 echo "  Vsock Port:      $VSOCK_PORT"
 echo "  API Key:         ${API_KEY:+provided}"
+echo "  Gateway Token:   ${GATEWAY_TOKEN:+provided}"
 
 if [ -z "$API_KEY" ]; then
     echo ""
@@ -147,29 +149,19 @@ echo ""
 
 echo "[4/4] Sending package to enclave (CID $ENCLAVE_CID)..."
 
-# Create metadata JSON (including API key if provided)
+# Create metadata JSON (including API key and gateway token if provided)
+METADATA="{"
+METADATA="$METADATA\"package\": \"clawdbot\","
+METADATA="$METADATA\"version\": \"$MOLTBOT_VERSION\","
+METADATA="$METADATA\"sha256\": \"$HASH\","
+METADATA="$METADATA\"size_bytes\": $TARBALL_SIZE"
 if [ -n "$API_KEY" ]; then
-    METADATA=$(cat <<EOF
-{
-  "package": "clawdbot",
-  "version": "$MOLTBOT_VERSION",
-  "sha256": "$HASH",
-  "size_bytes": $TARBALL_SIZE,
-  "api_key": "$API_KEY"
-}
-EOF
-)
-else
-    METADATA=$(cat <<EOF
-{
-  "package": "clawdbot",
-  "version": "$MOLTBOT_VERSION",
-  "sha256": "$HASH",
-  "size_bytes": $TARBALL_SIZE
-}
-EOF
-)
+    METADATA="$METADATA,\"api_key\": \"$API_KEY\""
 fi
+if [ -n "$GATEWAY_TOKEN" ]; then
+    METADATA="$METADATA,\"gateway_token\": \"$GATEWAY_TOKEN\""
+fi
+METADATA="$METADATA}"
 
 echo "  Metadata:"
 echo "$METADATA" | jq '.'

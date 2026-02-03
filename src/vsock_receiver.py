@@ -65,6 +65,7 @@ def receive_agent_package(port: int = 9000, output_path: str = "/tmp/moltbot.tgz
         print(f"[vsock] Receiving package: {metadata['package']} v{metadata['version']}")
         print(f"[vsock] Expected SHA256: {metadata['sha256']}")
         print(f"[vsock] API Key: {'provided' if metadata.get('api_key') else 'not provided'}")
+        print(f"[vsock] Gateway Token: {'provided' if metadata.get('gateway_token') else 'not provided'}")
 
         # Step 3: Receive tarball data and stream to disk
         print("[vsock] Receiving tarball data...")
@@ -119,14 +120,15 @@ def receive_agent_package(port: int = 9000, output_path: str = "/tmp/moltbot.tgz
         print(f"[vsock] ✓ Hash verified: {actual_hash}")
 
         # Return metadata for attestation
-        # Note: api_key is included but won't be saved to metadata file (security)
+        # Note: api_key and gateway_token are included but won't be saved to metadata file (security)
         return {
             "package": metadata['package'],
             "version": metadata['version'],
             "sha256": actual_hash,
             "size_bytes": total_size,
             "received_from_cid": addr[0],
-            "api_key": metadata.get('api_key', '')  # Return for config generation
+            "api_key": metadata.get('api_key', ''),  # Return for config generation
+            "gateway_token": metadata.get('gateway_token', '')  # Return for config generation
         }
 
     except Exception as e:
@@ -165,14 +167,20 @@ if __name__ == "__main__":
         default="/tmp/api_key",
         help="Output path for API key (default: /tmp/api_key)"
     )
+    parser.add_argument(
+        "--gateway-token-output",
+        type=str,
+        default="/tmp/gateway_token",
+        help="Output path for gateway token (default: /tmp/gateway_token)"
+    )
 
     args = parser.parse_args()
 
     try:
         result = receive_agent_package(port=args.port, output_path=args.output)
 
-        # Save metadata for attestation (excluding API key for security)
-        metadata_to_save = {k: v for k, v in result.items() if k != 'api_key'}
+        # Save metadata for attestation (excluding API key and gateway token for security)
+        metadata_to_save = {k: v for k, v in result.items() if k not in ['api_key', 'gateway_token']}
 
         with open(args.metadata_output, 'w') as f:
             json.dump(metadata_to_save, f, indent=2)
@@ -188,6 +196,16 @@ if __name__ == "__main__":
             print(f"[vsock] ✓ API key saved to: {args.apikey_output} (mode 0600)")
         else:
             print(f"[vsock] ⚠ No API key provided")
+
+        # Save gateway token to separate file with secure permissions
+        if result.get('gateway_token'):
+            with open(args.gateway_token_output, 'w') as f:
+                f.write(result['gateway_token'])
+            # Secure permissions: only readable by owner
+            os.chmod(args.gateway_token_output, 0o600)
+            print(f"[vsock] ✓ Gateway token saved to: {args.gateway_token_output} (mode 0600)")
+        else:
+            print(f"[vsock] ⚠ No gateway token provided")
 
         print("[vsock] ✓ Reception complete!")
         sys.exit(0)
