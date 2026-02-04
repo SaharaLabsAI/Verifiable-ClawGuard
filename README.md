@@ -11,8 +11,7 @@ We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) 
 
 ## Demo video: Proving that a response is generated after a guardrail
 
-<video src="assets/attested_response_generation.mp4" controls></video>
-
+https://github.com/user-attachments/assets/aa268bc4-3628-4e09-99a0-e3e317087c4b
 
 Verifiable guardrails matter broadly in human-to-agent or agent-to-agent communications:
 
