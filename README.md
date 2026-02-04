@@ -9,7 +9,7 @@ We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) 
 ![attestation_request_via_chat](assets/demo_attestation_request.png)
 ![attestation_response_via_chat](assets/demo_attestation_response.png)
 
-Video demo: Proving a response is generated after a guardrail
+## Demo video: Proving that a response is generated after a guardrail
 
 <video src="assets/attested_response_generation.mp4" controls></video>
 
