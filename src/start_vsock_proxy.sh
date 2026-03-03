@@ -4,6 +4,7 @@
 # This script runs on the PARENT EC2 INSTANCE to expose enclave services:
 # 1. MoltBot WebSocket gateway (port 18789)
 # 2. Guardrail proxy (port 8080) - optional, for debugging
+# 3. Latency experiment server (port 8770) - optional
 #
 # Usage:
 #   ./start_vsock_proxy.sh [enclave-cid]
@@ -50,7 +51,7 @@ echo "Starting proxies..."
 echo ""
 
 # Start MoltBot WebSocket proxy
-echo "[1/2] Starting MoltBot WebSocket proxy..."
+echo "[1/3] Starting MoltBot WebSocket proxy..."
 echo "  Local:  ws://127.0.0.1:18789"
 echo "  Enclave: CID $ENCLAVE_CID:18789"
 
@@ -78,7 +79,7 @@ echo ""
 START_GUARDRAIL_PROXY="${START_GUARDRAIL_PROXY:-false}"
 
 if [ "$START_GUARDRAIL_PROXY" = "true" ]; then
-    echo "[2/2] Starting Guardrail proxy (debug mode)..."
+    echo "[2/3] Starting Guardrail proxy (debug mode)..."
     echo "  Local:  http://127.0.0.1:8080"
     echo "  Enclave: CID $ENCLAVE_CID:8080"
 
@@ -102,7 +103,39 @@ if [ "$START_GUARDRAIL_PROXY" = "true" ]; then
 
     echo "  ✓ Guardrail proxy started"
 else
-    echo "[2/2] Guardrail proxy: Skipped (set START_GUARDRAIL_PROXY=true to enable)"
+    echo "[2/3] Guardrail proxy: Skipped (set START_GUARDRAIL_PROXY=true to enable)"
+fi
+
+# Optionally start latency experiment proxy
+START_EXPERIMENT_PROXY="${START_EXPERIMENT_PROXY:-false}"
+EXPERIMENT_PROXY_BIND="${EXPERIMENT_PROXY_BIND:-127.0.0.1}"
+
+if [ "$START_EXPERIMENT_PROXY" = "true" ]; then
+    echo "[3/3] Starting Latency Experiment proxy..."
+    echo "  Local:  http://$EXPERIMENT_PROXY_BIND:8770"
+    echo "  Enclave: CID $ENCLAVE_CID:8770"
+
+    nohup python3 vsock_proxy.py \
+        --tcp-host $EXPERIMENT_PROXY_BIND \
+        --tcp-port 8770 \
+        --vsock-cid $ENCLAVE_CID \
+        --vsock-port 8770 \
+        > logs/experiment_proxy.log 2>&1 &
+
+    EXPERIMENT_PROXY_PID=$!
+    echo "  PID: $EXPERIMENT_PROXY_PID"
+    sleep 2
+
+    if ! ps -p $EXPERIMENT_PROXY_PID > /dev/null 2>&1; then
+        echo "  ✗ Failed to start Latency Experiment proxy"
+        echo "  Check logs/experiment_proxy.log for errors"
+        kill $MOLTBOT_PROXY_PID ${GUARDRAIL_PROXY_PID:-} 2>/dev/null || true
+        exit 1
+    fi
+
+    echo "  ✓ Latency Experiment proxy started"
+else
+    echo "[3/3] Latency Experiment proxy: Skipped (set START_EXPERIMENT_PROXY=true to enable)"
 fi
 
 echo ""
@@ -111,6 +144,7 @@ echo ""
 cat > .vsock_proxy_pids <<EOF
 MOLTBOT_PROXY_PID=$MOLTBOT_PROXY_PID
 GUARDRAIL_PROXY_PID=${GUARDRAIL_PROXY_PID:-}
+EXPERIMENT_PROXY_PID=${EXPERIMENT_PROXY_PID:-}
 ENCLAVE_CID=$ENCLAVE_CID
 EOF
 
@@ -129,15 +163,8 @@ if [ "$START_GUARDRAIL_PROXY" = "true" ]; then
     echo ""
 fi
 
-echo "Logs:"
-echo "  MoltBot:    logs/moltbot_proxy.log"
-if [ "$START_GUARDRAIL_PROXY" = "true" ]; then
-    echo "  Guardrail:  logs/guardrail_proxy.log"
+if [ "$START_EXPERIMENT_PROXY" = "true" ]; then
+    echo "Latency experiment API:"
+    echo "  http://$EXPERIMENT_PROXY_BIND:8770/experiment/latency"
+    echo ""
 fi
-echo ""
-echo "To stop proxies:"
-echo "  ./stop_vsock_proxy.sh"
-echo ""
-echo "To view MoltBot proxy logs:"
-echo "  tail -f logs/moltbot_proxy.log"
-echo ""

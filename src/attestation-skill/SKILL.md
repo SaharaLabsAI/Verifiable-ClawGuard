@@ -51,32 +51,15 @@ Generate attestation document with user's challenge.
     },
     "certificate": "...",
     "user_data": "..."
-  },
-  "pcr2": "abc123...",
-  "user_data": {
-    "timestamp": "2026-01-30T12:00:00Z",
-    "agent": "OpenClaw",
-    "guardrail": "LLM Proxy with Guardrails",
-    "custom_digest": "a1b2c3d4...",
-    "custom_digest_method": "sha256"
-  },
-  "custom_digest": "a1b2c3d4...",
-  "custom_digest_method": "sha256",
-  "custom_data": {"key": "value"},
-  "tee_verified": true,
-  "verification_instructions": {...}
+  }
 }
 ```
-
-**Custom Data Attestation (Hash Commitment):**
-- The `custom_data` can contain arbitrary JSON (no size limit)
-- SHA256 digest is computed and included in the attested `user_data`
-- Both digest (in attestation) and plaintext (in response) are returned
-- Verifiers recompute `SHA256(custom_data)` to confirm it matches `custom_digest`
 
 **When to use:** User asks "prove you're in a TEE", "what's your PCR2?", "show me your attestation"
 
 **When to attest with custom data**: When the user asks a question and asks for an attested response, set your intended response in  "custom_data": {"response": "..."} and call the attestation endpoint.
+
+**Explain user how to obtain full attestation document**: You typically don't return the full attestation document in the chat due to its size and complexity. Instead, you instruct the user to request it with "%attest%" command in the chat, which will trigger a deterministic process that delivers the latest attestation document in the chat context.
 
 ---
 

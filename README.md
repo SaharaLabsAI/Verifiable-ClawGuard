@@ -6,8 +6,7 @@
 We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a simple guardrail and OpenClaw agent in a cloud TEE. For demonstrative purposes only, users can directly request attestation through the chat interface.
 
 
-![attestation_request_via_chat](assets/demo_attestation_request.png)
-![attestation_response_via_chat](assets/demo_attestation_response.png)
+![attestation_request_via_chat](assets/telegram_screenshot.png)
 
 ## Demo video: Proving that a response is generated after a guardrail
 
@@ -77,7 +76,7 @@ nitro-cli console --enclave-id $ENCLAVE_CID
 4. Launch all Vsock proxies and inject a version of the Clawdbot/Openclaw into the enclave. 
 
 ```
-./ec2_setup.sh --agent-version 2026.1.24-3 --enclave-cid $ENCLAVE_CID --api-key ${OPENAI_API_KEY} 
+./ec2_setup.sh --agent-version 2026.2.1 --enclave-cid $ENCLAVE_CID
 ```
 
 During launch, OpenClaw will be configured so that all LLM calls passes through a guardrail proxy server running locally inside the enclave. It will also launch an attestation server, and register `attestation` as a skill of the OpenClaw agent.

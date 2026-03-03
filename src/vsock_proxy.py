@@ -6,11 +6,11 @@ This script runs on the PARENT EC2 INSTANCE and forwards traffic between:
 - TCP port (accessible from outside) ←→ Vsock port (connects to enclave)
 
 Use cases:
-1. Forward MoltBot WebSocket: TCP :18789 ←→ Vsock CID:16 port:18789
+1. Forward OpenClaw WebSocket: TCP :18789 ←→ Vsock CID:16 port:18789
 2. Forward guardrail proxy: TCP :8080 ←→ Vsock CID:16 port:8080
 
 Usage:
-    # Forward MoltBot gateway
+    # Forward OpenClaw gateway
     ./vsock_proxy.py --tcp-port 18789 --vsock-cid 16 --vsock-port 18789
 
     # Forward guardrail proxy for debugging
@@ -163,7 +163,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Forward MoltBot WebSocket gateway
+  # Forward OpenClaw WebSocket gateway
   %(prog)s --tcp-port 18789 --vsock-cid 16 --vsock-port 18789
 
   # Forward guardrail proxy for debugging

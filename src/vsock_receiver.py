@@ -14,9 +14,9 @@ import os
 from pathlib import Path
 
 
-def receive_agent_package(port: int = 9000, output_path: str = "/tmp/moltbot.tgz"):
+def receive_agent_package(port: int = 9000, output_path: str = "/tmp/openclaw.tgz"):
     """
-    Receive MoltBot package via vsock from parent instance
+    Receive OpenClaw package via vsock from parent instance
 
     Args:
         port: Vsock port to listen on
@@ -64,7 +64,9 @@ def receive_agent_package(port: int = 9000, output_path: str = "/tmp/moltbot.tgz
         metadata = json.loads(metadata_bytes.decode('utf-8'))
         print(f"[vsock] Receiving package: {metadata['package']} v{metadata['version']}")
         print(f"[vsock] Expected SHA256: {metadata['sha256']}")
-        print(f"[vsock] API Key: {'provided' if metadata.get('api_key') else 'not provided'}")
+        print(f"[vsock] OPENAI_API_KEY: {'provided' if (metadata.get('openai_api_key') or metadata.get('api_key')) else 'not provided'}")
+        print(f"[vsock] OPENROUTER_API_KEY: {'provided' if metadata.get('openrouter_api_key') else 'not provided'}")
+        print(f"[vsock] SERPER_API_KEY: {'provided' if metadata.get('serper_api_key') else 'not provided'}")
         print(f"[vsock] Gateway Token: {'provided' if metadata.get('gateway_token') else 'not provided'}")
 
         # Step 3: Receive tarball data and stream to disk
@@ -120,14 +122,17 @@ def receive_agent_package(port: int = 9000, output_path: str = "/tmp/moltbot.tgz
         print(f"[vsock] ✓ Hash verified: {actual_hash}")
 
         # Return metadata for attestation
-        # Note: api_key and gateway_token are included but won't be saved to metadata file (security)
+        # Note: secrets are included here but won't be saved to metadata file (security)
         return {
             "package": metadata['package'],
             "version": metadata['version'],
             "sha256": actual_hash,
             "size_bytes": total_size,
             "received_from_cid": addr[0],
-            "api_key": metadata.get('api_key', ''),  # Return for config generation
+            "api_key": metadata.get('api_key', ''),  # Legacy compatibility
+            "openai_api_key": metadata.get('openai_api_key', metadata.get('api_key', '')),
+            "openrouter_api_key": metadata.get('openrouter_api_key', ''),
+            "serper_api_key": metadata.get('serper_api_key', ''),
             "gateway_token": metadata.get('gateway_token', '')  # Return for config generation
         }
 
@@ -152,8 +157,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output",
         type=str,
-        default="/tmp/moltbot.tgz",
-        help="Output path for tarball (default: /tmp/moltbot.tgz)"
+        default="/tmp/openclaw.tgz",
+        help="Output path for tarball (default: /tmp/openclaw.tgz)"
     )
     parser.add_argument(
         "--metadata-output",
@@ -168,6 +173,24 @@ if __name__ == "__main__":
         help="Output path for API key (default: /tmp/api_key)"
     )
     parser.add_argument(
+        "--openai-apikey-output",
+        type=str,
+        default="/tmp/openai_api_key",
+        help="Output path for OPENAI_API_KEY (default: /tmp/openai_api_key)"
+    )
+    parser.add_argument(
+        "--openrouter-apikey-output",
+        type=str,
+        default="/tmp/openrouter_api_key",
+        help="Output path for OPENROUTER_API_KEY (default: /tmp/openrouter_api_key)"
+    )
+    parser.add_argument(
+        "--serper-apikey-output",
+        type=str,
+        default="/tmp/serper_api_key",
+        help="Output path for SERPER_API_KEY (default: /tmp/serper_api_key)"
+    )
+    parser.add_argument(
         "--gateway-token-output",
         type=str,
         default="/tmp/gateway_token",
@@ -179,23 +202,54 @@ if __name__ == "__main__":
     try:
         result = receive_agent_package(port=args.port, output_path=args.output)
 
-        # Save metadata for attestation (excluding API key and gateway token for security)
-        metadata_to_save = {k: v for k, v in result.items() if k not in ['api_key', 'gateway_token']}
+        # Save metadata for attestation (excluding secrets for security)
+        metadata_to_save = {
+            k: v
+            for k, v in result.items()
+            if k not in ['api_key', 'openai_api_key', 'openrouter_api_key', 'serper_api_key', 'gateway_token']
+        }
 
         with open(args.metadata_output, 'w') as f:
             json.dump(metadata_to_save, f, indent=2)
 
         print(f"[vsock] ✓ Metadata saved to: {args.metadata_output}")
 
-        # Save API key to separate file with secure permissions
+        # Save legacy API key file for backward compatibility
         if result.get('api_key'):
             with open(args.apikey_output, 'w') as f:
                 f.write(result['api_key'])
             # Secure permissions: only readable by owner
             os.chmod(args.apikey_output, 0o600)
-            print(f"[vsock] ✓ API key saved to: {args.apikey_output} (mode 0600)")
+            print(f"[vsock] ✓ Legacy API key saved to: {args.apikey_output} (mode 0600)")
         else:
-            print(f"[vsock] ⚠ No API key provided")
+            print(f"[vsock] ⚠ No legacy API key provided")
+
+        # Save OPENAI_API_KEY to separate file with secure permissions
+        if result.get('openai_api_key'):
+            with open(args.openai_apikey_output, 'w') as f:
+                f.write(result['openai_api_key'])
+            os.chmod(args.openai_apikey_output, 0o600)
+            print(f"[vsock] ✓ OPENAI_API_KEY saved to: {args.openai_apikey_output} (mode 0600)")
+        else:
+            print(f"[vsock] ⚠ No OPENAI_API_KEY provided")
+
+        # Save OPENROUTER_API_KEY to separate file with secure permissions
+        if result.get('openrouter_api_key'):
+            with open(args.openrouter_apikey_output, 'w') as f:
+                f.write(result['openrouter_api_key'])
+            os.chmod(args.openrouter_apikey_output, 0o600)
+            print(f"[vsock] ✓ OPENROUTER_API_KEY saved to: {args.openrouter_apikey_output} (mode 0600)")
+        else:
+            print(f"[vsock] ⚠ No OPENROUTER_API_KEY provided")
+
+        # Save SERPER_API_KEY to separate file with secure permissions
+        if result.get('serper_api_key'):
+            with open(args.serper_apikey_output, 'w') as f:
+                f.write(result['serper_api_key'])
+            os.chmod(args.serper_apikey_output, 0o600)
+            print(f"[vsock] ✓ SERPER_API_KEY saved to: {args.serper_apikey_output} (mode 0600)")
+        else:
+            print(f"[vsock] ⚠ No SERPER_API_KEY provided")
 
         # Save gateway token to separate file with secure permissions
         if result.get('gateway_token'):

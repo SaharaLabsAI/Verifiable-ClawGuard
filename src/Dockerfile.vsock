@@ -31,16 +31,14 @@ WORKDIR /guardrail
 # Install Python guardrail dependencies
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir -r requirements.txt --break-system-packages
+RUN python3 -c "import nltk; nltk.download('punkt', quiet=True)"
 
 # Copy guardrail application files
 COPY proxy_server.py ./
 COPY audit_logger.py ./
-COPY guardrail_policy.py ./
-COPY policy_config.json ./
 COPY attestation_server.py ./
-
-# Copy guardrails config if it exists
-COPY guardrails_config ./guardrails_config
+COPY guardrail_server.py ./
+COPY factcheck ./factcheck
 
 # Copy attestation skill
 COPY attestation-skill /attestation-skill

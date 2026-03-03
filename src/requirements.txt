@@ -4,10 +4,17 @@ httpx
 pydantic
 python-dotenv
 cryptography
+openai>=1.0.0
+anthropic
+tiktoken
+nltk
+requests
+backoff
+beautifulsoup4
+yacs
+flask
 
 # AWS Nitro Enclaves NSM Interface for attestation
 aws-nsm-interface
 cbor2
 
-# NeMo Guardrails for content safety
-nemoguardrails[openai]

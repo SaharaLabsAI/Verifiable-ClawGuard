@@ -76,7 +76,6 @@ if ! command -v nitro-cli &> /dev/null; then
     echo "ERROR: nitro-cli not found"
     echo ""
     echo "Install AWS Nitro CLI:"
-    echo "  Amazon Linux 2: sudo amazon-linux-extras install aws-nitro-enclaves-cli"
     echo "  Ubuntu: Follow https://docs.aws.amazon.com/enclaves/latest/user/nitro-enclave-cli-install.html"
     exit 1
 fi

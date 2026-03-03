@@ -3,16 +3,16 @@
 #
 # This script runs inside the Nitro Enclave and:
 # 1. Starts the guardrail proxy
-# 2. Receives MoltBot package from parent via vsock
-# 3. Installs and configures MoltBot
-# 4. Starts MoltBot gateway
+# 2. Receives OpenClaw package from parent via vsock
+# 3. Installs and configures OpenClaw
+# 4. Starts OpenClaw gateway
 #
-# PCR2 includes this script, but NOT the MoltBot package!
+# PCR2 includes this script, but NOT the OpenClaw package!
 
 set -e
 
 echo "=========================================="
-echo "  Guardrail + MoltBot Enclave Bootstrap"
+echo "  Guardrail + OpenClaw Enclave Bootstrap"
 echo "=========================================="
 echo ""
 
@@ -64,7 +64,7 @@ echo ""
 echo "[1/5] Configuring network isolation..."
 
 # Block all outbound network except localhost
-# This prevents MoltBot from bypassing the guardrail proxy
+# This prevents OpenClaw from bypassing the guardrail proxy
 # Note: iptables may fail in some enclave environments, but we continue anyway
 set +e  # Don't exit on iptables failure
 if iptables -A OUTPUT -o lo -j ACCEPT 2>/dev/null && \
@@ -115,19 +115,91 @@ echo "    Forwarding to parent CID 3 via vsock:8001"
 echo ""
 
 # ============================================================================
-# Step 2: Start guardrail proxy
+# Step 2: Receive OpenClaw package via vsock
 # ============================================================================
 
-echo "[2/5] Starting guardrail proxy server..."
+echo "[2/6] Receiving OpenClaw package from parent instance..."
+echo "  Waiting for injection... (no timeout, will wait indefinitely)"
+
+# Run vsock receiver
+# Note: This will BLOCK indefinitely until inject_openclaw.sh is run from parent
+python3 /guardrail/vsock_receiver.py \
+    --port 9000 \
+    --output /tmp/openclaw.tgz \
+    --metadata-output /tmp/agent_metadata.json \
+    --apikey-output /tmp/api_key \
+    --openai-apikey-output /tmp/openai_api_key \
+    --openrouter-apikey-output /tmp/openrouter_api_key \
+    --serper-apikey-output /tmp/serper_api_key \
+    --gateway-token-output /tmp/gateway_token
+
+if [ ! -f /tmp/openclaw.tgz ]; then
+    echo "  ERROR: Failed to receive OpenClaw tarball"
+    kill $LOCAL_PROXY_PID 2>/dev/null || true
+    exit 1
+fi
+
+if [ ! -f /tmp/agent_metadata.json ]; then
+    echo "  ERROR: Agent metadata not saved"
+    kill $LOCAL_PROXY_PID 2>/dev/null || true
+    exit 1
+fi
+
+# Display received metadata
+echo ""
+echo "  Received package metadata:"
+cat /tmp/agent_metadata.json | jq '.'
+echo ""
+
+# ============================================================================
+# Step 2.5: Load and export injected API keys
+# ============================================================================
+
+echo "[2.5/6] Loading injected API keys..."
+
+# OPENAI_API_KEY (prefer dedicated file, fallback to legacy /tmp/api_key)
+if [ -f /tmp/openai_api_key ]; then
+    export OPENAI_API_KEY=$(cat /tmp/openai_api_key)
+    echo "  ✓ OPENAI_API_KEY loaded"
+elif [ -f /tmp/api_key ]; then
+    export OPENAI_API_KEY=$(cat /tmp/api_key)
+    echo "  ✓ OPENAI_API_KEY loaded from legacy api_key"
+else
+    echo "  ⚠ No OPENAI_API_KEY provided"
+fi
+
+# OPENROUTER_API_KEY
+if [ -f /tmp/openrouter_api_key ]; then
+    export OPENROUTER_API_KEY=$(cat /tmp/openrouter_api_key)
+    echo "  ✓ OPENROUTER_API_KEY loaded"
+else
+    echo "  ⚠ No OPENROUTER_API_KEY provided"
+fi
+
+# SERPER_API_KEY
+if [ -f /tmp/serper_api_key ]; then
+    export SERPER_API_KEY=$(cat /tmp/serper_api_key)
+    echo "  ✓ SERPER_API_KEY loaded"
+else
+    echo "  ⚠ No SERPER_API_KEY provided"
+fi
+
+echo ""
+
+# ============================================================================
+# Step 3: Start guardrail proxy
+# ============================================================================
+
+echo "[3/6] Starting guardrail proxy server..."
 cd /guardrail
 
 # Configure HTTP proxy for outbound requests
 export HTTP_PROXY="http://localhost:8888"
 export HTTPS_PROXY="http://localhost:8888"
+# Exclude localhost and 127.0.0.1 from proxying (so guardrail proxy works)
+export NO_PROXY="localhost,127.0.0.1"
 
 # Start proxy in background
-# Note: NeMo Guardrails will fail to initialize (no API key yet)
-# This is expected - proxy will run in audit-only mode until first request
 python3 proxy_server.py &
 PROXY_PID=$!
 
@@ -160,10 +232,10 @@ done
 echo ""
 
 # ============================================================================
-# Step 2.5: Start attestation server
+# Step 3.5: Start attestation server
 # ============================================================================
 
-echo "[2.5/5] Starting attestation server..."
+echo "[3.5/6] Starting attestation server..."
 
 # Start attestation server in background (keep output visible for debugging)
 python3 /guardrail/attestation_server.py &
@@ -198,114 +270,124 @@ done
 echo ""
 
 # ============================================================================
-# Step 3: Receive MoltBot package via vsock
+# Step 3.6: Start latency experiment server
 # ============================================================================
 
-echo "[3/5] Receiving MoltBot package from parent instance..."
-echo "  Waiting for injection... (no timeout, will wait indefinitely)"
+echo "[3.6/6] Starting latency experiment server..."
 
-# Run vsock receiver
-# Note: This will BLOCK indefinitely until inject_moltbot.sh is run from parent
-python3 /guardrail/vsock_receiver.py \
-    --port 9000 \
-    --output /tmp/moltbot.tgz \
-    --metadata-output /tmp/agent_metadata.json
+# Start experiment server in background (inherits exported API keys)
+python3 /guardrail/guardrail_server.py &
+EXPERIMENT_SERVER_PID=$!
+echo "  Latency experiment server started (PID: $EXPERIMENT_SERVER_PID)"
 
-if [ ! -f /tmp/moltbot.tgz ]; then
-    echo "  ERROR: Failed to receive MoltBot tarball"
-    kill $PROXY_PID
-    exit 1
-fi
+# Wait for server to be ready
+for i in {1..30}; do
+    if ! kill -0 $EXPERIMENT_SERVER_PID 2>/dev/null; then
+        echo "  ERROR: Latency experiment server process died (PID: $EXPERIMENT_SERVER_PID)"
+        kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID 2>/dev/null || true
+        exit 1
+    fi
 
-if [ ! -f /tmp/agent_metadata.json ]; then
-    echo "  ERROR: Agent metadata not saved"
-    kill $PROXY_PID
-    exit 1
-fi
+    if curl -s http://localhost:8770/health > /dev/null 2>&1; then
+        echo "  ✓ Latency experiment server is healthy"
+        break
+    fi
 
-# Display received metadata
+    if [ $i -eq 30 ]; then
+        echo "  ERROR: Latency experiment server failed to respond after 30 seconds"
+        kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $EXPERIMENT_SERVER_PID 2>/dev/null || true
+        exit 1
+    fi
+
+    sleep 1
+done
+
 echo ""
-echo "  Received package metadata:"
-cat /tmp/agent_metadata.json | jq '.'
-echo ""
 
 # ============================================================================
-# Step 4: Install MoltBot
+# Step 4: Install OpenClaw
 # ============================================================================
 
-echo "[4/5] Installing MoltBot from received tarball..."
+echo "[4/5] Installing OpenClaw from received tarball..."
 
 # Extract bundled tarball (contains node_modules with all dependencies)
 echo "  Extracting bundled package..."
 # Extract to /tmp (we attempted to remount with exec in step 0.5)
 INSTALL_DIR="/tmp/node_modules"
 mkdir -p "$INSTALL_DIR"
-tar xzf /tmp/moltbot.tgz -C "$INSTALL_DIR"
+tar xzf /tmp/openclaw.tgz -C "$INSTALL_DIR"
 
-# Find and create wrapper for clawdbot binary
-CLAWDBOT_ENTRY=""
-if [ -f "$INSTALL_DIR/clawdbot/dist/entry.js" ]; then
-    CLAWDBOT_ENTRY="$INSTALL_DIR/clawdbot/dist/entry.js"
+# Find and create wrapper for openclaw binary
+OPENCLAW_ENTRY=""
+if [ -f "$INSTALL_DIR/openclaw/dist/entry.js" ]; then
+    OPENCLAW_ENTRY="$INSTALL_DIR/openclaw/dist/entry.js"
     echo "  ✓ Found binary: dist/entry.js"
-elif [ -f "$INSTALL_DIR/clawdbot/bin/clawdbot.js" ]; then
-    CLAWDBOT_ENTRY="$INSTALL_DIR/clawdbot/bin/clawdbot.js"
-    echo "  ✓ Found binary: bin/clawdbot.js"
-elif [ -f "$INSTALL_DIR/clawdbot/bin/index.js" ]; then
-    CLAWDBOT_ENTRY="$INSTALL_DIR/clawdbot/bin/index.js"
+elif [ -f "$INSTALL_DIR/openclaw/bin/openclaw.js" ]; then
+    OPENCLAW_ENTRY="$INSTALL_DIR/openclaw/bin/openclaw.js"
+    echo "  ✓ Found binary: bin/openclaw.js"
+elif [ -f "$INSTALL_DIR/openclaw/bin/index.js" ]; then
+    OPENCLAW_ENTRY="$INSTALL_DIR/openclaw/bin/index.js"
     echo "  ✓ Found binary: bin/index.js"
 else
-    echo "  ERROR: Could not find clawdbot binary"
+    echo "  ERROR: Could not find openclaw binary"
     echo "  Searched for:"
-    echo "    - $INSTALL_DIR/clawdbot/dist/entry.js"
-    echo "    - $INSTALL_DIR/clawdbot/bin/clawdbot.js"
-    echo "    - $INSTALL_DIR/clawdbot/bin/index.js"
+    echo "    - $INSTALL_DIR/openclaw/dist/entry.js"
+    echo "    - $INSTALL_DIR/openclaw/bin/openclaw.js"
+    echo "    - $INSTALL_DIR/openclaw/bin/index.js"
     kill $PROXY_PID
     exit 1
 fi
 
 # Create wrapper script (avoids /tmp execute permission issues)
-cat > /usr/local/bin/clawdbot <<WRAPPER_EOF
+cat > /usr/local/bin/openclaw <<WRAPPER_EOF
 #!/bin/bash
-exec node "$CLAWDBOT_ENTRY" "\$@"
+exec node "$OPENCLAW_ENTRY" "\$@"
 WRAPPER_EOF
 
-chmod +x /usr/local/bin/clawdbot
-echo "  ✓ Wrapper script created: /usr/local/bin/clawdbot"
+chmod +x /usr/local/bin/openclaw
+echo "  ✓ Wrapper script created: /usr/local/bin/openclaw"
 
 # Verify installation
-if ! command -v clawdbot &> /dev/null; then
-    echo "  ERROR: MoltBot installation failed (clawdbot command not found)"
+if ! command -v openclaw &> /dev/null; then
+    echo "  ERROR: OpenClaw installation failed (openclaw command not found)"
     kill $PROXY_PID
     exit 1
 fi
 
-INSTALLED_VERSION=$(clawdbot --version 2>/dev/null || echo "unknown")
-echo "  ✓ MoltBot installed: $INSTALLED_VERSION"
+INSTALLED_VERSION=$(openclaw --version 2>/dev/null || echo "unknown")
+echo "  ✓ OpenClaw installed: $INSTALLED_VERSION"
 
 # Set NODE_PATH so Node.js can find modules in /tmp/node_modules
+
+# Ensure NO_PROXY is set for OpenClaw as well (exclude localhost from HTTP proxy)
+export NO_PROXY="localhost,127.0.0.1"
+echo "  ✓ NO_PROXY configured to exclude localhost from HTTP proxy"
 export NODE_PATH="$INSTALL_DIR:$NODE_PATH"
 echo "  ✓ NODE_PATH configured: $NODE_PATH"
 echo ""
 
 # ============================================================================
-# Step 5: Configure and start MoltBot
+# Step 5: Configure and start OpenClaw
 # ============================================================================
 
-echo "[5/5] Configuring MoltBot to use guardrail proxy..."
+echo "[5/5] Configuring OpenClaw to use guardrail proxy..."
 
-# Create MoltBot config directory
-mkdir -p ~/.clawdbot
+# Create OpenClaw config directory
+mkdir -p ~/.openclaw
 
 # Register attestation skill
 echo "  Registering attestation skill..."
-mkdir -p ~/.clawdbot/skills/attestation-skill
-cp /attestation-skill/SKILL.md ~/.clawdbot/skills/attestation-skill/SKILL.md
-echo "  ✓ Attestation skill registered at ~/.clawdbot/skills/attestation-skill/SKILL.md"
+mkdir -p ~/.openclaw/skills/attestation-skill
+cp /attestation-skill/SKILL.md ~/.openclaw/skills/attestation-skill/SKILL.md
+echo "  ✓ Attestation skill registered at ~/.openclaw/skills/attestation-skill/SKILL.md"
 
 # Read API key from vsock-injected file
-if [ -f /tmp/api_key ]; then
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+    API_KEY="$OPENAI_API_KEY"
+    echo "  ✓ OpenAI API key loaded from exported OPENAI_API_KEY"
+elif [ -f /tmp/api_key ]; then
     API_KEY=$(cat /tmp/api_key)
-    echo "  ✓ API key loaded from vsock injection"
+    echo "  ✓ API key loaded from legacy /tmp/api_key"
 else
     echo "  ⚠ No API key provided - using placeholder"
     API_KEY="sk-proj-dummy"
@@ -322,8 +404,8 @@ else
 fi
 
 # Create config that routes all LLM calls through the guardrail proxy
-# Note: Using correct config path: ~/.clawdbot/clawdbot.json
-cat > ~/.clawdbot/clawdbot.json <<EOF
+# Note: Using correct config path: ~/.openclaw/openclaw.json
+cat > ~/.openclaw/openclaw.json <<EOF
 {
   "models": {
     "mode": "merge",
@@ -338,7 +420,7 @@ cat > ~/.clawdbot/clawdbot.json <<EOF
             "name": "GPT-5.1 (via Guardrail)",
             "input": ["text"],
             "contextWindow": 128000,
-            "maxTokens": 4096
+            "maxTokens": 10000
           }
         ]
       }
@@ -359,15 +441,24 @@ cat > ~/.clawdbot/clawdbot.json <<EOF
       "mode": "token",
       "token": "$GATEWAY_TOKEN"
     }
+  },
+  "channels": {
+    "telegram": {
+      "enabled": false,
+      "dmPolicy": "pairing",
+      "groupPolicy": "allowlist",
+      "streamMode": "partial",
+      "proxy": "http://localhost:8888"
+    }
   }
 }
 EOF
 
 # Securely delete API key and gateway token files
-rm -f /tmp/api_key /tmp/gateway_token
+rm -f /tmp/api_key /tmp/openai_api_key /tmp/openrouter_api_key /tmp/serper_api_key /tmp/gateway_token
 
-echo "  ✓ MoltBot configured:"
-echo "    - Config: ~/.clawdbot/clawdbot.json"
+echo "  ✓ OpenClaw configured:"
+echo "    - Config: ~/.openclaw/openclaw.json"
 echo "    - Proxy: http://localhost:8080/v1"
 echo "    - All LLM calls will be routed through guardrail"
 echo "    - API key and gateway token securely loaded and original files deleted"
@@ -391,28 +482,57 @@ echo "    Vsock :18789 → TCP localhost:18789"
 
 echo ""
 
+# Start bridge to forward vsock connections to latency experiment server
+python3 /guardrail/vsock_to_tcp_bridge.py \
+    --vsock-port 8770 \
+    --tcp-port 8770 \
+    >/dev/null 2>&1 &
+
+EXPERIMENT_BRIDGE_PID=$!
+echo "  ✓ Latency experiment bridge started (PID: $EXPERIMENT_BRIDGE_PID)"
+echo "    Vsock :8770 → TCP localhost:8770"
+
+echo ""
+
 # ============================================================================
-# Final: Start MoltBot Gateway
+# Final: Start OpenClaw Gateway
 # ============================================================================
 
 echo "=========================================="
-echo "  Starting MoltBot Gateway"
+echo "  Starting OpenClaw Gateway"
 echo "=========================================="
 echo ""
 
 # Trap SIGTERM to cleanup
-trap "echo 'Shutting down...'; kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $BRIDGE_PID 2>/dev/null || true; exit 0" SIGTERM SIGINT
+trap "echo 'Shutting down...'; kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $EXPERIMENT_SERVER_PID $BRIDGE_PID $EXPERIMENT_BRIDGE_PID 2>/dev/null || true; exit 0" SIGTERM SIGINT
 
-# Start MoltBot gateway (blocks)
-# Gateway is configured in ~/.clawdbot/clawdbot.json (mode: "local", port: 18789)
+# Start OpenClaw gateway (blocks)
+# Gateway is configured in ~/.openclaw/openclaw.json (mode: "local", port: 18789)
 # Use xvfb-run to provide virtual display for clipboard module
 echo "Starting gateway with virtual display (xvfb)..."
 
+# Ensure HTTP proxy environment variables are set for OpenClaw
+# (Node.js/undici needs these for fetch to work through proxy)
+export HTTP_PROXY="http://localhost:8888"
+export HTTPS_PROXY="http://localhost:8888"
+export NO_PROXY="localhost,127.0.0.1"
+
+# Force Node.js to use environment HTTP proxy for undici/fetch
+# This works with Node.js 18+ built-in fetch
+export NODE_OPTIONS="--dns-result-order=ipv4first ${NODE_OPTIONS:-}"
+
+echo "  HTTP proxy environment:"
+echo "    HTTP_PROXY=$HTTP_PROXY"
+echo "    HTTPS_PROXY=$HTTPS_PROXY"
+echo "    NO_PROXY=$NO_PROXY"
+echo "    NODE_OPTIONS=$NODE_OPTIONS"
+echo ""
+
 # Try to start gateway, but run diagnostics on error
-if ! xvfb-run -a clawdbot gateway; then
+if ! xvfb-run -a openclaw gateway; then
     echo ""
     echo "=========================================="
-    echo "  ERROR: MoltBot Gateway Failed to Start"
+    echo "  ERROR: OpenClaw Gateway Failed to Start"
     echo "=========================================="
     echo ""
 
@@ -446,8 +566,8 @@ if ! xvfb-run -a clawdbot gateway; then
     xvfb-run -a env | grep DISPLAY || echo "   DISPLAY not set"
     echo ""
 
-    echo "4. Checking clawdbot version:"
-    clawdbot --version 2>&1 || echo "   Failed to get version"
+    echo "4. Checking openclaw version:"
+    openclaw --version 2>&1 || echo "   Failed to get version"
     echo ""
 
     echo "=========================================="
@@ -455,13 +575,17 @@ if ! xvfb-run -a clawdbot gateway; then
     echo "  Background services still running:"
     echo "    - Guardrail proxy (PID: $PROXY_PID)"
     echo "    - Local HTTP proxy (PID: $LOCAL_PROXY_PID)"
+    echo "    - Attestation server (PID: $ATTESTATION_PID)"
+    echo "    - Latency experiment server (PID: $EXPERIMENT_SERVER_PID)"
+    echo "    - Gateway bridge (PID: $BRIDGE_PID)"
+    echo "    - Experiment bridge (PID: $EXPERIMENT_BRIDGE_PID)"
     echo "=========================================="
 
     # Sleep forever to keep enclave running
     tail -f /dev/null
 fi
 
-# If MoltBot exits normally, cleanup
-echo "MoltBot gateway exited"
-kill $PROXY_PID $LOCAL_PROXY_PID $BRIDGE_PID 2>/dev/null || true
+# If OpenClaw exits normally, cleanup
+echo "OpenClaw gateway exited"
+kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $EXPERIMENT_SERVER_PID $BRIDGE_PID $EXPERIMENT_BRIDGE_PID 2>/dev/null || true
 exit 0

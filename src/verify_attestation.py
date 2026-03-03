@@ -93,6 +93,90 @@ class NonceError(AttestationVerificationError):
 # COSE Signature Verification (The Critical Part!)
 # ============================================================================
 
+def _is_mostly_printable(text: str, min_printable_ratio: float = 0.95) -> bool:
+    if not text:
+        return True
+    printable = sum(1 for ch in text if (ch.isprintable() or ch in "\n\r\t"))
+    return (printable / len(text)) >= min_printable_ratio
+
+
+def _sanitize_for_plaintext(value: Any, *, max_bytes_preview: int = 256) -> Any:
+    """Convert CBOR-decoded values into JSON-printable primitives.
+
+    This is intended for human-readable debugging output, not for cryptographic use.
+    """
+    if isinstance(value, bytes):
+        # Try UTF-8 first (covers nonce/user_data when stored as bytes)
+        try:
+            decoded = value.decode("utf-8")
+            if _is_mostly_printable(decoded):
+                if len(decoded) > 2048:
+                    return decoded[:2048] + "…(truncated)"
+                return decoded
+        except Exception:
+            pass
+
+        # Otherwise show a bounded hex preview + length + hash
+        preview = value[:max_bytes_preview].hex()
+        suffix = "…" if len(value) > max_bytes_preview else ""
+        return {
+            "__type__": "bytes",
+            "len": len(value),
+            "sha256": hashlib.sha256(value).hexdigest(),
+            "hex_preview": preview + suffix,
+        }
+
+    if isinstance(value, dict):
+        # JSON requires string keys; CBOR commonly uses int keys (e.g., PCR indices)
+        return {str(k): _sanitize_for_plaintext(v, max_bytes_preview=max_bytes_preview) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [_sanitize_for_plaintext(v, max_bytes_preview=max_bytes_preview) for v in value]
+
+    if isinstance(value, tuple):
+        return [_sanitize_for_plaintext(v, max_bytes_preview=max_bytes_preview) for v in value]
+
+    # Fall back to JSON primitives or string representation
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+
+    return str(value)
+
+
+def _print_attestation_plaintext_from_cose(attestation_doc_bytes: bytes) -> None:
+    """Best-effort decode of the COSE_Sign1 payload and print as readable JSON."""
+    try:
+        cose_sign1 = cbor2.loads(attestation_doc_bytes)
+        if not isinstance(cose_sign1, list) or len(cose_sign1) != 4:
+            print("(Could not render plaintext: invalid COSE_Sign1 structure)")
+            return
+
+        protected_bytes = cose_sign1[0]
+        payload_bytes = cose_sign1[2]
+
+        protected_headers = {}
+        if isinstance(protected_bytes, (bytes, bytearray)) and protected_bytes:
+            try:
+                protected_headers = cbor2.loads(protected_bytes)
+            except Exception:
+                protected_headers = {"__warning__": "failed to decode protected headers"}
+
+        payload = cbor2.loads(payload_bytes)
+        printable = {
+            "cose": {
+                "protected_headers": _sanitize_for_plaintext(protected_headers),
+                "payload_len": len(payload_bytes) if isinstance(payload_bytes, (bytes, bytearray)) else None,
+            },
+            "attestation": _sanitize_for_plaintext(payload),
+        }
+
+        print("Attestation document (plaintext view):")
+        print(json.dumps(printable, indent=2, sort_keys=True))
+        print()
+    except Exception as e:
+        print(f"(Could not render plaintext attestation document: {e})")
+        print()
+
 def verify_cose_signature(cose_doc: bytes, aws_root_cert_pem: str = AWS_NITRO_ROOT_CERT_PEM) -> Dict[str, Any]:
     """
     Verify the COSE_Sign1 signature and certificate chain.
@@ -333,7 +417,8 @@ def verify_attestation_document(
     known_pcr2: Optional[str] = None,
     allowed_versions: Optional[List[str]] = None,
     max_age_seconds: int = MAX_ATTESTATION_AGE,
-    expected_nonce: Optional[str] = None
+    expected_nonce: Optional[str] = None,
+    print_plaintext: bool = True
 ) -> Dict[str, Any]:
     """
     Verify an attestation document.
@@ -360,6 +445,9 @@ def verify_attestation_document(
         print(f"✓ Decoded attestation document ({len(attestation_doc_bytes)} bytes)")
     except Exception as e:
         raise AttestationVerificationError(f"Failed to decode base64: {e}")
+
+    if print_plaintext:
+        _print_attestation_plaintext_from_cose(attestation_doc_bytes)
 
     # Step 2: Verify COSE signature (THE CRITICAL STEP!)
     print()
@@ -496,7 +584,8 @@ def verify_enclave_attestation(
     allowed_versions: Optional[List[str]] = None,
     max_age_seconds: int = MAX_ATTESTATION_AGE,
     nonce: Optional[str] = None,
-    timeout: int = 10
+    timeout: int = 10,
+    print_plaintext: bool = True
 ) -> Dict[str, Any]:
     """
     Fetch and verify attestation from a remote enclave.
@@ -565,7 +654,8 @@ def verify_enclave_attestation(
         known_pcr2=known_pcr2,
         allowed_versions=allowed_versions,
         max_age_seconds=max_age_seconds,
-        expected_nonce=nonce
+        expected_nonce=nonce,
+        print_plaintext=print_plaintext
     )
 
 
@@ -625,6 +715,15 @@ Examples:
         help=f'Maximum attestation age in seconds (default: {MAX_ATTESTATION_AGE})'
     )
 
+    parser.add_argument(
+        '--no-print-doc',
+        dest='print_doc',
+        action='store_false',
+        help='Do not print a plaintext view of the attestation document'
+    )
+
+    parser.set_defaults(print_doc=True)
+
     args = parser.parse_args()
 
     if not args.url and not args.file:
@@ -660,7 +759,8 @@ Examples:
                 known_pcr2=args.pcr2,
                 allowed_versions=allowed_versions,
                 max_age_seconds=args.max_age,
-                expected_nonce=args.nonce
+                expected_nonce=args.nonce,
+                print_plaintext=args.print_doc
             )
         else:
             # Verify remote attestation
@@ -669,7 +769,8 @@ Examples:
                 known_pcr2=args.pcr2,
                 allowed_versions=allowed_versions,
                 max_age_seconds=args.max_age,
-                nonce=args.nonce
+                nonce=args.nonce,
+                print_plaintext=args.print_doc
             )
 
         print()

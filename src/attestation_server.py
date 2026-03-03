@@ -7,7 +7,7 @@ This service provides:
 2. Encrypted session establishment via key exchange
 3. Session management for encrypted communication
 
-The server is designed to be called by Clawdbot inside the enclave,
+The server is designed to be called by OpenClaw inside the enclave,
 with results sent to users through chat.
 """
 
@@ -315,7 +315,7 @@ async def root():
             "/decrypt": "Decrypt message from user",
             "/health": "Health check"
         },
-        "note": "This server runs INSIDE the enclave and is called by Clawdbot"
+        "note": "This server runs INSIDE the enclave and is called by OpenClaw"
     }
 
 
@@ -585,7 +585,7 @@ async def decrypt_message(request: EncryptedMessageRequest):
     """
     Decrypt message from user
     
-    Used by Clawdbot to decrypt incoming user messages that were
+    Used by OpenClaw to decrypt incoming user messages that were
     encrypted with the session key.
     """
     try:
@@ -628,7 +628,7 @@ async def encrypt_message(request: Request):
     """
     Encrypt message for user
     
-    Used by Clawdbot to encrypt outgoing responses before sending
+    Used by OpenClaw to encrypt outgoing responses before sending
     through chat.
     
     Request body: {"session_id": "...", "plaintext": "..."}
@@ -708,7 +708,7 @@ if __name__ == "__main__":
         print("  ⚠️  Use only for development/debugging")
     print()
     print("Starting server...")
-    print("  Host: 127.0.0.1 (localhost only - called by Clawdbot)")
+    print("  Host: 127.0.0.1 (localhost only - called by OpenClaw)")
     print("  Port: 8765")
     print()
     print("Endpoints:")
@@ -719,7 +719,7 @@ if __name__ == "__main__":
     print("  GET  /sessions        - List active sessions")
     print("  GET  /health          - Health check")
     print()
-    print("Usage by Clawdbot:")
+    print("Usage by OpenClaw:")
     print("  curl -X POST http://localhost:8765/attestation \\")
     print("    -H 'Content-Type: application/json' \\")
     print("    -d '{\"nonce\": \"user_challenge_here\"}'")
@@ -730,7 +730,7 @@ if __name__ == "__main__":
     
     uvicorn.run(
         app,
-        host="127.0.0.1",  # Localhost only - called by Clawdbot
+        host="127.0.0.1",  # Localhost only - called by OpenClaw
         port=8765,
         log_level="info"
     )

@@ -34,7 +34,9 @@ def handle_connect_tunnel(client_sock, target, leftover_data):
 
         # Connect to target server
         target_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        target_sock.settimeout(30)
+        target_sock.settimeout(300)  # 5 minutes for large context LLM requests
+        target_sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        print(host,port)
         target_sock.connect((host, port))
         print(f"[http-forwarder] CONNECT {host}:{port} - connected to target")
 
@@ -56,7 +58,11 @@ def handle_connect_tunnel(client_sock, target, leftover_data):
         bytes_target_to_client = 0
 
         while True:
-            readable, _, exceptional = select.select(sockets, [], sockets, 300)
+            try:
+                readable, _, exceptional = select.select(sockets, [], sockets, 300)
+            except (OSError, ValueError) as e:
+                print(f"[http-forwarder] CONNECT {host}:{port} - select error: {e}")
+                break
 
             if exceptional:
                 print(f"[http-forwarder] CONNECT {host}:{port} - exceptional condition")
@@ -64,7 +70,7 @@ def handle_connect_tunnel(client_sock, target, leftover_data):
 
             if not readable:
                 # Timeout
-                print(f"[http-forwarder] CONNECT {host}:{port} - timeout")
+                print(f"[http-forwarder] CONNECT {host}:{port} - timeout after 300s")
                 break
 
             for sock in readable:
@@ -83,8 +89,13 @@ def handle_connect_tunnel(client_sock, target, leftover_data):
                     else:
                         client_sock.sendall(data)
                         bytes_target_to_client += len(data)
-                except Exception as e:
+                except (ConnectionResetError, BrokenPipeError, OSError) as e:
                     print(f"[http-forwarder] CONNECT {host}:{port} - forward error: {e}")
+                    return
+                except Exception as e:
+                    print(f"[http-forwarder] CONNECT {host}:{port} - unexpected error: {e}")
+                    import traceback
+                    traceback.print_exc()
                     return
 
     except Exception as e:
@@ -99,9 +110,14 @@ def handle_connect_tunnel(client_sock, target, leftover_data):
     finally:
         if target_sock:
             try:
+                target_sock.shutdown(socket.SHUT_RDWR)
+            except:
+                pass
+            try:
                 target_sock.close()
             except:
                 pass
+        # Note: client_sock will be closed by handle_http_request's finally block
 
 
 def handle_http_request(client_sock, client_addr):
@@ -109,6 +125,9 @@ def handle_http_request(client_sock, client_addr):
     print(f"[http-forwarder] Connection from CID {client_addr[0]}")
 
     try:
+        # Set socket timeout to prevent hanging
+        client_sock.settimeout(300)  # 5 minutes for large context LLM requests
+        
         # Read HTTP request headers first
         request_data = b""
         while b"\r\n\r\n" not in request_data:
@@ -224,6 +243,8 @@ def handle_http_request(client_sock, client_addr):
     
     except Exception as e:
         print(f"[http-forwarder] Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         try:
             error_resp = b"HTTP/1.1 502 Bad Gateway\r\n\r\nProxy Error"
             client_sock.sendall(error_resp)
@@ -231,7 +252,15 @@ def handle_http_request(client_sock, client_addr):
             pass
     
     finally:
-        client_sock.close()
+        try:
+            client_sock.shutdown(socket.SHUT_RDWR)
+        except:
+            pass
+        try:
+            client_sock.close()
+        except:
+            pass
+        print(f"[http-forwarder] Connection closed for CID {client_addr[0]}")
 
 
 def main():
