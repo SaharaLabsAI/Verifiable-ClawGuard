@@ -56,8 +56,8 @@ COPY local_http_proxy.py ./
 COPY vsock_to_tcp_bridge.py ./
 
 # Copy and set permissions for boot script
-COPY boot_vsock.sh /boot_vsock.sh
-RUN chmod +x /boot_vsock.sh
+COPY boot.sh /boot.sh
+RUN chmod +x /boot.sh
 
 # ============================================================================
 # END MEASURED LAYER
@@ -70,4 +70,4 @@ RUN chmod +x /boot_vsock.sh
 EXPOSE 8080
 
 # Run boot script
-CMD ["/boot_vsock.sh"]
+CMD ["/boot.sh"]
