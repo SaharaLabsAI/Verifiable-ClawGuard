@@ -31,9 +31,10 @@ from audit_logger import AuditLogger
 # Safety Directive Configuration
 # ============================================================================
 
-# Core safety directive that will be prepended to all LLM interactions
-SAFETY_DIRECTIVE = "Committed to beneficial AI that protects humanity."
+# Optional safety directive that will be prepended to all LLM interactions
+SAFETY_DIRECTIVE = ""
 UNSAFE_DETERMINISTIC_RESPONSE = "Sorry, I cannot fullfil your request"
+CONTENT_GUARDRAIL_ENABLED = True
 
 
 # ============================================================================
@@ -421,6 +422,7 @@ async def lifespan(app):
     print("=" * 60)
     print(f"Safety Directive: Enabled")
     print(f"  \"{SAFETY_DIRECTIVE}\"")
+    print(f"Content Guardrail: {'Enabled' if CONTENT_GUARDRAIL_ENABLED else 'Disabled'}")
     print(f"Audit Logging: Enabled")
     print("=" * 60)
 
@@ -622,7 +624,7 @@ async def _proxy_openai_response(
         error_msg = json.dumps(response_data, indent=2)
         print(f"  [{request_id}] OpenAI ERROR: {error_msg[:500]}..." if len(error_msg) > 500 else f"  [{request_id}] OpenAI ERROR: {error_msg}")
 
-    if response.status_code < 400:
+    if response.status_code < 400 and CONTENT_GUARDRAIL_ENABLED:
         latest_user_text = _extract_latest_user_text(body.get("messages", []))
         assistant_text = _extract_assistant_text_from_openai_response(response_data)
 
@@ -657,6 +659,8 @@ async def _proxy_openai_response(
                 f"    assistant_present={bool(assistant_text)} preview={_truncate_for_log(assistant_text) if assistant_text else '[empty]'}\n"
                 f"    guardrail_response_preview={debug_body_preview}"
             )
+    elif response.status_code < 400:
+        print(f"  [{request_id}] Content guardrail disabled; skipping moderation")
     
     # Debug: Log raw response to diagnose empty content issues
     print(f"  [{request_id}] Raw OpenAI response:")
