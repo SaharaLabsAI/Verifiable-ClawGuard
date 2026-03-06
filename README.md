@@ -1,9 +1,6 @@
-# ClawGuard: Verifiable Guardrails for Openclaw Agents
+# ClawGuard: Proof-of-Guardrail in AI Agents with Trusted Execution Environments
 
-> *"Committed to beneficial AI that protects humanity"* - Cryptographically verify whether the agent you talk to adheres to this principle.
-
-
-We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a simple guardrail and OpenClaw agent in a cloud TEE. For demonstrative purposes only, users can directly request attestation through the chat interface.
+We enable a human or agent chatting with a remote OpenClaw agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a content safety guardrail, a fact checker, and an OpenClaw agent in a cloud TEE. Users can directly request attestation through the chat interface.
 
 
 ![attestation_request_via_chat](assets/telegram_screenshot.png)
@@ -12,18 +9,10 @@ We enable a human or agent chatting with a remote OpenClaw (Clawdbot / Moltbot) 
 
 https://github.com/user-attachments/assets/aa268bc4-3628-4e09-99a0-e3e317087c4b
 
-Verifiable guardrails matter broadly in human-to-agent or agent-to-agent communications:
-
-- **Service providers** can require attestation before serving high-impact tools/data, reducing the risk of being blamed for harm caused by an unguarded or misconfigured agent.
-- **Pro users** can verify that a remote agent is actually running under the controls it claims (not just configured that way), before delegating tasks or sharing sensitive context.
-- **Data/IP owners** can enforce usage boundaries (e.g., “analyze but don’t exfiltrate”) of their assets.
-
-This connects to our earlier work on [open-source agentic protocols and x402-extensions](https://github.com/SaharaLabsAI/x-function/tree/main/verifiable), where agents use verifiable checks so access to data/tools is granted only when policy conditions are met when making micro-payments powered by x402 protocol.
 
 ## System overview
 
 **Disclaimer: this version of the demo is for demonstrative purposes only.**
-
 
 We achieve verifiable guardrails by running it inside an AWS Nitro Enclave and using remote attestation to prove exactly what guardrail code is protecting the agent (a stable PCR2 measurement). All LLM traffic is forced through a FastAPI-based interception proxy (integrated with the guardrail); Verifiers can then check the attestation (PCRs plus embedded agent metadata/hashes) before trusting the agent or serving it data.
 
@@ -67,7 +56,7 @@ echo "Enclave running on CID: $ENCLAVE_CID"
 # Note: when debug mode is ON, the PCR2 in the attestation quote later will be all-zero.
 nitro-cli console --enclave-id $ENCLAVE_CID
 
-# to clean-up
+# to shut down
 # nitro-cli terminate-enclave --enclave-id ${ENCLAVE_ID}
 
 ```
@@ -76,7 +65,15 @@ nitro-cli console --enclave-id $ENCLAVE_CID
 4. Launch all Vsock proxies and inject a version of the Clawdbot/Openclaw into the enclave. 
 
 ```
+OPENAI_API_KEY=YOUR_OPENAI_API_KEY
+GATEWAY_TOKEN=YOUR_OPENCLAW_GATEWAY_TOKEN
+OPENROUTER_API_KEY=YOUR_OPERROUTER_API_KEY # for Llama Guard 3
+SERPER_API_KEY=YOUR_SERPER_API_KEY # for fact check
+
 ./ec2_setup.sh --agent-version 2026.2.1 --enclave-cid $ENCLAVE_CID
+
+# to clean up
+./ec2_cleanup.sh
 ```
 
 During launch, OpenClaw will be configured so that all LLM calls passes through a guardrail proxy server running locally inside the enclave. It will also launch an attestation server, and register `attestation` as a skill of the OpenClaw agent.
