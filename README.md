@@ -12,7 +12,7 @@ https://github.com/user-attachments/assets/aa268bc4-3628-4e09-99a0-e3e317087c4b
 
 ## System overview
 
-**Disclaimer: this version of the demo is for demonstrative purposes only.**
+⚠️ **This is a proof-of-concept implementation for research and demonstration purposes. It is not production-ready.** See the [Limitations](#limitations) section for details.
 
 We achieve verifiable guardrails by running it inside an AWS Nitro Enclave and using remote attestation to prove exactly what guardrail code is protecting the agent (a stable PCR2 measurement). All LLM traffic is forced through a FastAPI-based interception proxy (integrated with the guardrail); Verifiers can then check the attestation (PCRs plus embedded agent metadata/hashes) before trusting the agent or serving it data.
 
@@ -207,3 +207,18 @@ To further ensure response authenticity, you can ask the agent to include their 
 
 
 ```
+
+## Limitations
+
+This implementation is for **demonstrative purposes only** and has the following known limitations:
+
+### Agent Security Constraints
+- The OpenClaw configuration interface remains accessible, allowing potential runtime configuration changes that are not reflected in PCR measurements.
+- The enclave does not currently restrict arbitrary command execution capabilities of OpenClaw, which could potentially be used to bypass guardrails.
+
+### Recommended Improvements for Production Use
+- Pin all dependencies (Docker base image digest, system package versions, Python package versions)
+- Implement read-only configuration enforcement for OpenClaw
+- Restrict or disable code execution capabilities inside the enclave
+- Establish a trusted build pipeline with published PCR baselines
+- Implement certificate pinning for critical API endpoints
