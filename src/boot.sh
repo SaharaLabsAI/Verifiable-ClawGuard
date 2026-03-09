@@ -151,6 +151,30 @@ echo "  Received package metadata:"
 cat /tmp/agent_metadata.json | jq '.'
 echo ""
 
+# Validate tarball integrity against injected metadata hash
+echo "[2.1/6] Validating received tarball SHA256..."
+EXPECTED_SHA256="dddd008a818a569cf70bb43665fda8eb13e8e8b28368ba73a7b916beaeb4996c"
+
+if command -v sha256sum >/dev/null 2>&1; then
+    ACTUAL_SHA256=$(sha256sum /tmp/openclaw.tgz | cut -d' ' -f1)
+elif command -v shasum >/dev/null 2>&1; then
+    ACTUAL_SHA256=$(shasum -a 256 /tmp/openclaw.tgz | cut -d' ' -f1)
+else
+    echo "  ERROR: No SHA256 utility found (need sha256sum or shasum)"
+    kill $LOCAL_PROXY_PID 2>/dev/null || true
+    exit 1
+fi
+
+if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+    echo "  ERROR: SHA256 mismatch for received tarball"
+    echo "    Expected: $EXPECTED_SHA256"
+    echo "    Actual:   $ACTUAL_SHA256"
+    kill $LOCAL_PROXY_PID 2>/dev/null || true
+    exit 1
+fi
+echo "  ✓ SHA256 verified"
+echo ""
+
 # ============================================================================
 # Step 2.5: Load and export injected API keys
 # ============================================================================
@@ -305,6 +329,38 @@ done
 echo ""
 
 # ============================================================================
+# Step 3.8: Prepare unprivileged OpenClaw runtime user
+# ============================================================================
+
+echo "[3.8/6] Preparing unprivileged OpenClaw runtime user..."
+
+OPENCLAW_USER="openclaw"
+OPENCLAW_HOME="/var/lib/openclaw"
+OPENCLAW_CONFIG_DIR="/etc/openclaw"
+OPENCLAW_CONFIG_PATH="$OPENCLAW_CONFIG_DIR/openclaw.json"
+OPENCLAW_SKILLS_DIR="$OPENCLAW_HOME/.openclaw/skills/attestation-skill"
+
+if id -u "$OPENCLAW_USER" >/dev/null 2>&1; then
+    echo "  ✓ User '$OPENCLAW_USER' already exists"
+else
+    if useradd -r -m -d "$OPENCLAW_HOME" -s /usr/sbin/nologin "$OPENCLAW_USER" 2>/dev/null; then
+        echo "  ✓ Created system user '$OPENCLAW_USER'"
+    elif useradd -m -d "$OPENCLAW_HOME" -s /bin/bash "$OPENCLAW_USER" 2>/dev/null; then
+        echo "  ✓ Created user '$OPENCLAW_USER'"
+    else
+        echo "  ERROR: Failed to create user '$OPENCLAW_USER'"
+        kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $EXPERIMENT_SERVER_PID 2>/dev/null || true
+        exit 1
+    fi
+fi
+
+mkdir -p "$OPENCLAW_HOME/.openclaw" "$OPENCLAW_CONFIG_DIR"
+chown -R "$OPENCLAW_USER":"$OPENCLAW_USER" "$OPENCLAW_HOME"
+chmod 700 "$OPENCLAW_HOME/.openclaw"
+echo "  ✓ Runtime directories prepared"
+echo ""
+
+# ============================================================================
 # Step 4: Install OpenClaw
 # ============================================================================
 
@@ -372,14 +428,12 @@ echo ""
 
 echo "[5/5] Configuring OpenClaw to use guardrail proxy..."
 
-# Create OpenClaw config directory
-mkdir -p ~/.openclaw
-
 # Register attestation skill
 echo "  Registering attestation skill..."
-mkdir -p ~/.openclaw/skills/attestation-skill
-cp /attestation-skill/SKILL.md ~/.openclaw/skills/attestation-skill/SKILL.md
-echo "  ✓ Attestation skill registered at ~/.openclaw/skills/attestation-skill/SKILL.md"
+mkdir -p "$OPENCLAW_SKILLS_DIR"
+cp /attestation-skill/SKILL.md "$OPENCLAW_SKILLS_DIR/SKILL.md"
+chown -R "$OPENCLAW_USER":"$OPENCLAW_USER" "$OPENCLAW_HOME/.openclaw/skills"
+echo "  ✓ Attestation skill registered at $OPENCLAW_SKILLS_DIR/SKILL.md"
 
 # Read API key from vsock-injected file
 if [ -n "${OPENAI_API_KEY:-}" ]; then
@@ -404,8 +458,7 @@ else
 fi
 
 # Create config that routes all LLM calls through the guardrail proxy
-# Note: Using correct config path: ~/.openclaw/openclaw.json
-cat > ~/.openclaw/openclaw.json <<EOF
+cat > "$OPENCLAW_CONFIG_PATH" <<EOF
 {
   "models": {
     "mode": "merge",
@@ -448,17 +501,24 @@ cat > ~/.openclaw/openclaw.json <<EOF
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "streamMode": "partial",
-      "proxy": "http://localhost:8888"
+      "proxy": "http://localhost:8888",
+      "allowFrom": [
+        "7972547431"
+      ]
     }
   }
 }
 EOF
 
+# Keep config immutable to the unprivileged OpenClaw runtime user.
+chown root:root "$OPENCLAW_CONFIG_PATH"
+chmod 0444 "$OPENCLAW_CONFIG_PATH"
+
 # Securely delete API key and gateway token files
 rm -f /tmp/api_key /tmp/openai_api_key /tmp/openrouter_api_key /tmp/serper_api_key /tmp/gateway_token
 
 echo "  ✓ OpenClaw configured:"
-echo "    - Config: ~/.openclaw/openclaw.json"
+echo "    - Config: $OPENCLAW_CONFIG_PATH (read-only)"
 echo "    - Proxy: http://localhost:8080/v1"
 echo "    - All LLM calls will be routed through guardrail"
 echo "    - API key and gateway token securely loaded and original files deleted"
@@ -507,7 +567,7 @@ echo ""
 trap "echo 'Shutting down...'; kill $PROXY_PID $LOCAL_PROXY_PID $ATTESTATION_PID $EXPERIMENT_SERVER_PID $BRIDGE_PID $EXPERIMENT_BRIDGE_PID 2>/dev/null || true; exit 0" SIGTERM SIGINT
 
 # Start OpenClaw gateway (blocks)
-# Gateway is configured in ~/.openclaw/openclaw.json (mode: "local", port: 18789)
+# Gateway is configured in $OPENCLAW_CONFIG_PATH (mode: "local", port: 18789)
 # Use xvfb-run to provide virtual display for clipboard module
 echo "Starting gateway with virtual display (xvfb)..."
 
@@ -521,15 +581,19 @@ export NO_PROXY="localhost,127.0.0.1"
 # This works with Node.js 18+ built-in fetch
 export NODE_OPTIONS="--dns-result-order=ipv4first ${NODE_OPTIONS:-}"
 
+OPENCLAW_GATEWAY_CMD="export HTTP_PROXY='$HTTP_PROXY' HTTPS_PROXY='$HTTPS_PROXY' NO_PROXY='$NO_PROXY' NODE_OPTIONS='$NODE_OPTIONS' NODE_PATH='$NODE_PATH' OPENCLAW_CONFIG_PATH='$OPENCLAW_CONFIG_PATH'; xvfb-run -a openclaw gateway"
+
 echo "  HTTP proxy environment:"
 echo "    HTTP_PROXY=$HTTP_PROXY"
 echo "    HTTPS_PROXY=$HTTPS_PROXY"
 echo "    NO_PROXY=$NO_PROXY"
 echo "    NODE_OPTIONS=$NODE_OPTIONS"
+echo "    OPENCLAW_CONFIG_PATH=$OPENCLAW_CONFIG_PATH"
+echo "    RUN_AS_USER=$OPENCLAW_USER"
 echo ""
 
 # Try to start gateway, but run diagnostics on error
-if ! xvfb-run -a openclaw gateway; then
+if ! su -s /bin/bash -c "$OPENCLAW_GATEWAY_CMD" "$OPENCLAW_USER"; then
     echo ""
     echo "=========================================="
     echo "  ERROR: OpenClaw Gateway Failed to Start"
