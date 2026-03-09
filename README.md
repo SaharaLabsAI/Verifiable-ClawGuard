@@ -213,7 +213,6 @@ To further ensure response authenticity, you can ask the agent to include their 
 This implementation is for **demonstrative purposes only** and has the following known limitations:
 
 ### Agent Security Constraints
-- The OpenClaw configuration interface remains accessible, allowing potential runtime configuration changes that are not reflected in PCR measurements.
 - The enclave does not currently restrict arbitrary command execution capabilities of OpenClaw, which could potentially be used to bypass guardrails.
 
 ### Recommended Improvements for Production Use
