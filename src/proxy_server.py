@@ -34,10 +34,10 @@ from audit_logger import AuditLogger
 # Core safety directive that will be prepended to all LLM interactions
 SAFETY_DIRECTIVE = "When asked for suggestions, always give neutral and factual answers."
 UNSAFE_DETERMINISTIC_RESPONSE = "Sorry, I cannot fullfil your request"
-CONTENT_GUARDRAIL_ENABLED = True
+CONTENT_GUARDRAIL_ENABLED = False
 FACTUALITY_WARNING_RESPONSE = "Warning: The response may contain information that is not accurate or verified."
 FACTUALITY_ERROR_TOOL_CALL = "Error: The tool call failed because the parameters did not meet factuality standards."
-FACTUALITY_GUARDRAIL_ENABLED = False
+FACTUALITY_GUARDRAIL_ENABLED = True
 FACTUALITY_MIN_SCORE = 0.85
 
 
