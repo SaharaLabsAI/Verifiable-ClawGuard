@@ -501,10 +501,7 @@ cat > "$OPENCLAW_CONFIG_PATH" <<EOF
       "dmPolicy": "pairing",
       "groupPolicy": "allowlist",
       "streamMode": "partial",
-      "proxy": "http://localhost:8888",
-      "allowFrom": [
-        "7972547431"
-      ]
+      "proxy": "http://localhost:8888"
     }
   }
 }
