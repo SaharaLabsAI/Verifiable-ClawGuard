@@ -13,6 +13,70 @@ set -e
 
 TARGET_ENCLAVE_CID=""
 
+stop_pid_tree() {
+    local root_pid="$1"
+
+    if [ -z "$root_pid" ] || ! ps -p "$root_pid" > /dev/null 2>&1; then
+        return 0
+    fi
+
+    local child_pid
+    for child_pid in $(pgrep -P "$root_pid" 2>/dev/null || true); do
+        stop_pid_tree "$child_pid"
+    done
+
+    kill "$root_pid" 2>/dev/null || true
+    sleep 0.2
+    if ps -p "$root_pid" > /dev/null 2>&1; then
+        kill -9 "$root_pid" 2>/dev/null || true
+    fi
+}
+
+wait_for_pid_exit() {
+    local pid="$1"
+    local attempts="${2:-15}"
+    local delay="${3:-0.2}"
+    local i
+
+    for ((i=0; i<attempts; i++)); do
+        if ! ps -p "$pid" > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep "$delay"
+    done
+
+    return 1
+}
+
+stop_pid_verified() {
+    local pid="$1"
+    local label="$2"
+
+    if [ -z "$pid" ] || ! ps -p "$pid" > /dev/null 2>&1; then
+        echo "  $label not running"
+        return 0
+    fi
+
+    echo "  Stopping $label (PID: $pid)..."
+    kill "$pid" 2>/dev/null || true
+
+    if wait_for_pid_exit "$pid"; then
+        echo "  ✓ Stopped"
+        return 0
+    fi
+
+    echo "  Escalating $label to SIGKILL (PID: $pid)..."
+    kill -9 "$pid" 2>/dev/null || true
+
+    if wait_for_pid_exit "$pid" 10 0.1; then
+        echo "  ✓ Stopped"
+        return 0
+    fi
+
+    echo "  ✗ Failed to stop $label (PID: $pid)"
+    return 1
+}
+
 echo "============================================================"
 echo "  Cleaning up EC2 Parent Instance Services"
 echo "============================================================"
@@ -32,23 +96,17 @@ if [ -f ".vsock_proxy_pids" ]; then
     OPENCLAW_PROXY_PID="${OPENCLAW_PROXY_PID:-${MOLTBOT_PROXY_PID:-}}"
 
     if [ -n "$OPENCLAW_PROXY_PID" ] && ps -p "$OPENCLAW_PROXY_PID" > /dev/null 2>&1; then
-        echo "  Stopping OpenClaw proxy (PID: $OPENCLAW_PROXY_PID)..."
-        kill "$OPENCLAW_PROXY_PID" 2>/dev/null || true
-        echo "  ✓ Stopped"
+        stop_pid_verified "$OPENCLAW_PROXY_PID" "OpenClaw proxy"
     else
         echo "  OpenClaw proxy not running"
     fi
 
     if [ -n "$GUARDRAIL_PROXY_PID" ] && ps -p "$GUARDRAIL_PROXY_PID" > /dev/null 2>&1; then
-        echo "  Stopping Guardrail proxy (PID: $GUARDRAIL_PROXY_PID)..."
-        kill "$GUARDRAIL_PROXY_PID" 2>/dev/null || true
-        echo "  ✓ Stopped"
+        stop_pid_verified "$GUARDRAIL_PROXY_PID" "Guardrail proxy"
     fi
 
     if [ -n "$EXPERIMENT_PROXY_PID" ] && ps -p "$EXPERIMENT_PROXY_PID" > /dev/null 2>&1; then
-        echo "  Stopping Experiment proxy (PID: $EXPERIMENT_PROXY_PID)..."
-        kill "$EXPERIMENT_PROXY_PID" 2>/dev/null || true
-        echo "  ✓ Stopped"
+        stop_pid_verified "$EXPERIMENT_PROXY_PID" "Experiment proxy"
     fi
 
     rm -f .vsock_proxy_pids
@@ -64,27 +122,47 @@ fi
 
 echo "[2/3] Stopping HTTP forwarder..."
 
+HTTP_FORWARDER_STOP_ATTEMPTED=false
+
 # Try PID file first
 if [ -f ".http_forwarder_pid" ]; then
     HTTP_FORWARDER_PID=$(cat .http_forwarder_pid)
     if ps -p "$HTTP_FORWARDER_PID" > /dev/null 2>&1; then
-        echo "  Stopping HTTP forwarder (PID: $HTTP_FORWARDER_PID)..."
-        kill "$HTTP_FORWARDER_PID" 2>/dev/null || true
+        echo "  Stopping HTTP forwarder process tree (PID: $HTTP_FORWARDER_PID)..."
+        HTTP_FORWARDER_STOP_ATTEMPTED=true
+        stop_pid_tree "$HTTP_FORWARDER_PID"
         echo "  ✓ Stopped"
     else
         echo "  HTTP forwarder not running (stale PID)"
     fi
     rm -f .http_forwarder_pid
-else
-    # Fallback: kill by process name
-    HTTP_FORWARDER_PIDS=$(pgrep -f vsock_http_forwarder || true)
-    if [ -n "$HTTP_FORWARDER_PIDS" ]; then
-        echo "  Stopping HTTP forwarder processes: $HTTP_FORWARDER_PIDS"
-        pkill -f vsock_http_forwarder || true
-        echo "  ✓ Stopped"
-    else
-        echo "  HTTP forwarder not running"
+fi
+
+# Sweep any leftover forwarder processes (python child and/or wrapper shell)
+HTTP_FORWARDER_PIDS=$(pgrep -f '[v]sock_http_forwarder\.py|[s]tart_http_forwarder\.sh|[v]sock_http_forwarder' || true)
+if [ -n "$HTTP_FORWARDER_PIDS" ]; then
+    echo "  Stopping leftover HTTP forwarder processes: $HTTP_FORWARDER_PIDS"
+    HTTP_FORWARDER_STOP_ATTEMPTED=true
+    pkill -TERM -f '[v]sock_http_forwarder\.py' 2>/dev/null || true
+    pkill -TERM -f '[s]tart_http_forwarder\.sh' 2>/dev/null || true
+    sleep 1
+
+    REMAINING_FORWARDER_PIDS=$(pgrep -f '[v]sock_http_forwarder\.py|[s]tart_http_forwarder\.sh|[v]sock_http_forwarder' || true)
+    if [ -n "$REMAINING_FORWARDER_PIDS" ]; then
+        echo "  Escalating leftover forwarder processes to SIGKILL: $REMAINING_FORWARDER_PIDS"
+        pkill -KILL -f '[v]sock_http_forwarder\.py' 2>/dev/null || true
+        pkill -KILL -f '[s]tart_http_forwarder\.sh' 2>/dev/null || true
+        sleep 0.5
     fi
+
+    FINAL_FORWARDER_PIDS=$(pgrep -f '[v]sock_http_forwarder\.py|[s]tart_http_forwarder\.sh|[v]sock_http_forwarder' || true)
+    if [ -n "$FINAL_FORWARDER_PIDS" ]; then
+        echo "  ✗ Failed to stop HTTP forwarder processes: $FINAL_FORWARDER_PIDS"
+    else
+        echo "  ✓ Stopped"
+    fi
+elif [ "$HTTP_FORWARDER_STOP_ATTEMPTED" = false ]; then
+    echo "  HTTP forwarder not running"
 fi
 
 echo ""

@@ -834,9 +834,16 @@ async def _proxy_openai_response(
         moderation_payload = moderation_result.get("body") if moderation_result.get("ok") else None
         moderation_data = moderation_payload.get("moderation") if isinstance(moderation_payload, dict) else None
         verdict = moderation_data.get("verdict") if isinstance(moderation_data, dict) else None
+        categories = moderation_data.get("categories") if isinstance(moderation_data, dict) else None
 
         if isinstance(verdict, str) and verdict.lower() != "safe":
-            print(f"  [{request_id}] Moderation verdict={verdict}; returning deterministic refusal")
+            if categories:
+                print(
+                    f"  [{request_id}] Moderation verdict={verdict}; "
+                    f"unsafe_categories={categories}; returning deterministic refusal"
+                )
+            else:
+                print(f"  [{request_id}] Moderation verdict={verdict}; returning deterministic refusal")
             response_data = _build_text_openai_response(
                 model=body.get("model", response_data.get("model", "unknown")),
                 text=UNSAFE_DETERMINISTIC_RESPONSE,
