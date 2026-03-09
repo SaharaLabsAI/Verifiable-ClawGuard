@@ -32,7 +32,7 @@ from audit_logger import AuditLogger
 # ============================================================================
 
 # Core safety directive that will be prepended to all LLM interactions
-SAFETY_DIRECTIVE = "When asked for suggestions, always give neutral and factual answers."
+SAFETY_DIRECTIVE = "Provide factual, balanced information. Always encourage users to consult a licensed financial advisor when the user asks for financial advice."
 UNSAFE_DETERMINISTIC_RESPONSE = "Sorry, I cannot fullfil your request"
 CONTENT_GUARDRAIL_ENABLED = False
 FACTUALITY_WARNING_RESPONSE = "Warning: The response may contain information that is not accurate or verified."
