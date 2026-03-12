@@ -1,13 +1,26 @@
-# ClawGuard: Proof-of-Guardrail in AI Agents with Trusted Execution Environments
+<h1 align="center">🛡️ClawGuard: Proof-of-Guardrail in AI Agents with Trusted Execution Environments</h1>
+
+<p align="center">
+  <a href="https://arxiv.org/abs/2603.05786">
+    <img src="https://img.shields.io/badge/arXiv-2603.05786-B31B1B?logo=arxiv&logoColor=white" alt="arXiv: 2603.05786" />
+  </a>
+  <a href="https://saharalabsai.github.io/proof-of-guardrail/">
+    <img src="https://img.shields.io/badge/Project-Page-2F80ED" alt="🌐 Project Page" />
+  </a>
+  <a href="https://saharalabsai.github.io/proof-of-guardrail/static/assets/demo_video_2min.mp4">
+    <img src="https://img.shields.io/badge/%F0%9F%A6%9E%20OpenClaw-Demo-FF6B35" alt="🦞 OpenClaw | Demo" />
+  </a>
+  <a href="https://github.com/SaharaLabsAI/Verifiable-ClawGuard/blob/main/LICENSE">
+    <img src="https://img.shields.io/badge/License-MIT-22C55E" alt="License: MIT" />
+  </a>
+</p>
 
 We enable a human or agent chatting with a remote OpenClaw agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a content safety guardrail, a fact checker, and an OpenClaw agent in a cloud TEE. Users can directly request attestation through the chat interface.
 
 
-![attestation_request_via_chat](assets/telegram_screenshot.png)
-
-## Demo video: Proving that a response is generated after a guardrail
-
-https://github.com/user-attachments/assets/aa268bc4-3628-4e09-99a0-e3e317087c4b
+<p align="center">
+  <video src="https://saharalabsai.github.io/proof-of-guardrail/static/assets/demo_video_2min.mp4" controls width="80%"></video>
+</p>
 
 
 ## System overview
@@ -18,6 +31,11 @@ We achieve verifiable guardrails by running it inside an AWS Nitro Enclave and u
 
 Please note the attestation cannot ensure the agent to be 100% “safe” (the guardrail code could still have vulnerabilities, and the LLM guardrail can make mistakes), but it ensures the promised guardrail code is actually running.
 
+### Guardrails
+
+- Content safety guardrail: Llama Guard 3-8B through [OpenRouter API](https://openrouter.ai/meta-llama/llama-guard-3-8b)
+- Fact checking guardrail:  [Libr-AI/OpenFactVerification](https://github.com/Libr-AI/OpenFactVerification)
+
 ## Quickstart
 
 1. Launch an AWS EC2 `m5.xlarge` instance with Nitro Enclave modules enabled.
@@ -25,6 +43,8 @@ Please note the attestation cannot ensure the agent to be 100% “safe” (the g
 2. Build the enclave image of the guardrail that protects the agent, which will run in the enclave later. 
 
 ```
+# Optional: toggle content safety and factuality guardrails under `src/proxy_server.py`. This affects enclave measurements.
+
 cd src
 ./build_and_deploy.sh
 ```
@@ -93,7 +113,6 @@ A valid attestation proves:
 
 To further ensure response authenticity, you can ask the agent to include their response in the attestation quote in the chat. 
 
-**Caution.** To ensure the entire communication is untampered, end-to-end encryption between user and the agent running in the enclave is needed [(example)](https://github.com/SaharaLabsAI/x-function/tree/main/verifiable). This is not implemented yet in this demo.
 
 ## System architecture
 
