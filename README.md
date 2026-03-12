@@ -7,7 +7,7 @@
   <a href="https://saharalabsai.github.io/proof-of-guardrail/">
     <img src="https://img.shields.io/badge/Project-Page-2F80ED" alt="🌐 Project Page" />
   </a>
-  <a href="https://saharalabsai.github.io/proof-of-guardrail/static/assets/demo_video_2min.mp4">
+  <a href="https://github.com/user-attachments/assets/96b2f878-81a4-41a3-83d5-6f29e256120a">
     <img src="https://img.shields.io/badge/%F0%9F%A6%9E%20OpenClaw-Demo-FF6B35" alt="🦞 OpenClaw | Demo" />
   </a>
   <a href="https://github.com/SaharaLabsAI/Verifiable-ClawGuard/blob/main/LICENSE">
@@ -17,6 +17,7 @@
 
 We enable a human or agent chatting with a remote OpenClaw agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a content safety guardrail, a fact checker, and an OpenClaw agent in a cloud TEE. Users can directly request attestation through the chat interface.
 
+https://github.com/user-attachments/assets/96b2f878-81a4-41a3-83d5-6f29e256120a
 
 ## System overview
 
