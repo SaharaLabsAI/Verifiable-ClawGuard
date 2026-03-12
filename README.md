@@ -120,7 +120,7 @@ A valid attestation proves:
 ├──────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │  Vsock Proxy: 0.0.0.0:18789 → vsock://16:18789                           │    │
+│  │  Vsock Proxy: 0.0.0.0:18789 → vsock://xx:18789                           │    │
 │  │  - Exposes Openclaw gateway to internet                                  │    │ 
 │  │  - WebSocket forwarding                                                  │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
@@ -158,7 +158,7 @@ A valid attestation proves:
 │  │  ╔══════════════════════════════════════════════════════════════════╗    │    │
 │  │  ║  GUARDRAILS ENGINE                                               ║    │    │
 │  │  ║                                                                  ║    │    │
-│  │  ║  • Safety directive injection                                    ║    │    │
+│  │  ║  • Safety directive prompt injection                             ║    │    │
 │  │  ║  • Content safety checks                                         ║    │    │
 │  │  ║  • Factuality check                                              ║    │    │
 │  │  ║                                                                  ║    │    │
@@ -170,7 +170,6 @@ A valid attestation proves:
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
 │  │  OPENCLAW GATEWAY (ws://0.0.0.0:18789) [INJECTED - NOT IN PCR2]          │    │
 │  │  - AI agent framework with tool/skill support                            │    │
-│  │  - Configured with OPENAI_BASE_URL=http://localhost:8080                 │    │
 │  │  - Version swappable without PCR2 change                                 │    │
 │  │  - Future versions will block arbitrary command execs                    │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
