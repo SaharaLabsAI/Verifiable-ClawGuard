@@ -117,23 +117,6 @@ To further ensure response authenticity, you can ask the agent to include their 
 │                       VERIFIABLE LLM AGENT GUARDRAIL SYSTEM                      │
 │                   (AWS Nitro Enclave + Openclaw + Guardrail)                     │
 └──────────────────────────────────────────────────────────────────────────────────┘
-
-┌──────────────────────────────────────────────────────────────────────────────────┐
-│                            CLIENT LAYER (Untrusted)                              │
-├──────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  ┌─────────────────┐  ┌──────────────────┐  ┌─────────────────────────────┐      │
-│  │  OpenClaw CLI   │  │ Openclaw Desktop │  │  Custom API Clients         │      │
-│  │                 │  │                  │  │  (SDK Integration)          │      │
-│  └────────┬────────┘  └────────┬─────────┘  └──────────────┬──────────────┘      │
-│           │                    │                            │                    │
-│           └────────────────────┴────────────────────────────┘                    │
-│                                 │                                                │
-│                        ws://<EC2_PUBLIC_IP>:18789                                │
-└─────────────────────────────────┼────────────────────────────────────────────────┘
-                                  │
-                                  │ Internet
-                                  ↓
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                      PARENT EC2 INSTANCE - Untrusted                             │
 ├──────────────────────────────────────────────────────────────────────────────────┤
@@ -151,11 +134,9 @@ To further ensure response authenticity, you can ask the agent to include their 
 │  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
 │  ┌──────────────────────────────────────────────────────────────────────────┐    │
-│  │  Openclaw INJECTION (inject_moltbot.sh)                                  │    │
-│  │  - Downloads from npm: clawdbot@version                                  │    │
+│  │  Openclaw INJECTION (inject_openclaw.sh)                                 │    │
+│  │  - Downloads from npm: openclaw@version                                  │    │
 │  │  - Sends tarball via vsock:9000 with API key                             │    │
-│  │  - Caching for fast subsequent injections                                │    │
-│  │  - PCR2 stable across openclaw version updates                           │    │
 │  └──────────────────────────────────────────────────────────────────────────┘    │
 │                                                                                  │
 └───────────────────────────┬────────────────────────┬─────────────────────────────┘
@@ -179,12 +160,10 @@ To further ensure response authenticity, you can ask the agent to include their 
 │  │  ╔══════════════════════════════════════════════════════════════════╗    │    │
 │  │  ║  GUARDRAILS ENGINE                                               ║    │    │
 │  │  ║                                                                  ║    │    │
-│  │  ║  • Input/output validation                                       ║    │    │
+│  │  ║  • Safety directive injection                                    ║    │    │
 │  │  ║  • Content safety checks                                         ║    │    │
-│  │  ║  • Audit logging                                                 ║    │    │
-│  │  ║  • Policy enforcement                                            ║    │    │
+│  │  ║  • Factuality check                                              ║    │    │
 │  │  ║                                                                  ║    │    │
-│  │  ║  (Specific implementation: TBD)                                  ║    │    │
 │  │  ╚══════════════════════════════════════════════════════════════════╝    │    │
 │  └───────────────────────────────────┬──────────────────────────────────────┘    │
 │                                      │                                           │
