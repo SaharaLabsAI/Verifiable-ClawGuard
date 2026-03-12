@@ -17,9 +17,6 @@
 
 We enable a human or agent chatting with a remote OpenClaw agent to request a cryptographic proof that the remote agent is indeed running behind some known guardrail. The repository demonstrates deployment of a content safety guardrail, a fact checker, and an OpenClaw agent in a cloud TEE. Users can directly request attestation through the chat interface.
 
-<p align="center">
-  <video src="https://raw.githubusercontent.com/SaharaLabsAI/proof-of-guardrail/main/static/assets/demo_video_2min.mp4" controls width="80%"></video>
-</p>
 
 ## System overview
 
