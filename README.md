@@ -96,7 +96,7 @@ During launch, OpenClaw will be configured so that all LLM calls passes through 
 
 In the future, the guardrail will maintain a allowlist of acceptable builds of the agent. In addition, during the enclave boot, we will disable arbitary command execution of Openclaw inside the enclave.
 
-5. The OpenClaw gateway should be accessible from EC2 on ws://127.0.0.1:18789. Run SSH port forwarding from your local computer, open the web client in a broswer, and request attestation in the chat.
+5. The OpenClaw gateway should be accessible from EC2 on ws://127.0.0.1:18789. Run SSH port forwarding from your local computer, open the web client in a broswer, and request attestation in the chat. Send `%attest%` to obtain the full attestation document.
 
 6. Verify the attestation against the known PCR2 obtained earlier.
 ```
@@ -105,9 +105,7 @@ python verify_attestation.py --file ../examples/attestation_quote_example.json -
 
 A valid attestation proves:
 - The message was processed inside a genuine AWS Nitro Enclave (cryptographic signature verified)
-- The exact guardrail code you trust is running (PCR2 matches your known measurement)
-
-To further ensure response authenticity, you can ask the agent to include their response in the attestation quote in the chat. 
+- The exact guardrail code you trust executed (PCR2 matches your known measurement) on the response you received.
 
 
 ## System architecture
